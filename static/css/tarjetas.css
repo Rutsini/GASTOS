@@ -24,7 +24,8 @@
 }
 
 .credit-card-grid,
-.purchase-list {
+.purchase-list,
+.subscription-list {
   display: grid;
   gap: 14px;
 }
@@ -34,7 +35,8 @@
 }
 
 .credit-card-item,
-.purchase-item {
+.purchase-item,
+.subscription-item {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -201,6 +203,11 @@
 .status-pendiente {
   background: #fff7ed;
   color: #c2410c;
+}
+
+.status-suspendida {
+  background: #fffbeb;
+  color: #a16207;
 }
 
 .status-anulada,

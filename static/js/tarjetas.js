@@ -46,6 +46,28 @@
         if (diffNode) diffNode.textContent = formatMoney(total - amount);
     }
 
+    function updateSubscriptionMode() {
+        const toggle = document.querySelector(".js-card-subscription-toggle");
+        if (!toggle) {
+            return;
+        }
+        const enabled = toggle.checked;
+        document.querySelectorAll(".js-installment-only").forEach(function (group) {
+            group.hidden = enabled;
+            group.querySelectorAll("input, select, textarea").forEach(function (field) {
+                field.disabled = enabled;
+            });
+        });
+        const amountLabel = document.querySelector('[data-card-label="monto"]');
+        if (amountLabel) {
+            amountLabel.textContent = enabled ? "Monto mensual" : "Monto original";
+        }
+        const submit = document.querySelector("[data-card-submit-label]");
+        if (submit) {
+            submit.textContent = enabled ? "Crear suscripcion" : "Crear compra y cuotas";
+        }
+    }
+
     document.querySelectorAll("[data-confirm]").forEach(function (element) {
         element.addEventListener("click", function (event) {
             if (!window.confirm(element.getAttribute("data-confirm"))) {
@@ -66,6 +88,10 @@
     document.querySelectorAll(".js-card-amount, .js-card-installments, .js-card-installment-value").forEach(function (input) {
         input.addEventListener("input", updateFinancePreview);
     });
+    document.querySelectorAll(".js-card-subscription-toggle").forEach(function (input) {
+        input.addEventListener("change", updateSubscriptionMode);
+    });
+    updateSubscriptionMode();
     updateFinancePreview();
 
     const category = document.querySelector(".js-card-category");

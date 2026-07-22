@@ -26,6 +26,9 @@
             <h2>Cuotas del periodo</h2>
             <p class="muted">Cada cuota pagada genera su propio movimiento.</p>
         </div>
+        <form method="post" action="/tarjetas/{{ tarjeta.id }}/suscripciones/actualizar" class="inline-form">
+            <button class="btn" type="submit">Registrar cobros pendientes</button>
+        </form>
         <form method="get" action="/tarjetas/{{ tarjeta.id }}" class="period-form">
             <input type="month" name="periodo" value="{{ periodo }}">
             <button class="btn" type="submit">Ver periodo</button>
@@ -42,6 +45,64 @@
         </form>
     </div>
     {% endif %}
+</section>
+
+<section class="section-band">
+    <div class="section-header">
+        <div>
+            <h2>Suscripciones</h2>
+            <p class="muted">Cobros mensuales recurrentes vinculados a esta tarjeta.</p>
+        </div>
+    </div>
+    <div class="subscription-list">
+        {% for suscripcion in suscripciones %}
+        <article class="subscription-item">
+            <div class="purchase-main">
+                <div>
+                    <h3>{{ suscripcion.nombre }}</h3>
+                    <div class="muted">{{ suscripcion.comercio or 'Sin comercio' }} Â· {{ suscripcion.categoria or 'Sin categoria' }}</div>
+                </div>
+                <span class="status-pill status-{{ suscripcion.estado }}">{{ suscripcion.estado }}</span>
+            </div>
+            <div class="purchase-metrics">
+                <div><span>Monto mensual</span><strong>{{ suscripcion.monto_fmt }}</strong></div>
+                <div><span>Fecha de inicio</span><strong>{{ suscripcion.fecha_inicio_fmt }}</strong></div>
+                <div><span>Proximo cobro</span><strong>{{ suscripcion.fecha_proximo_cobro_fmt or '-' }}</strong></div>
+                <div><span>Cobros generados</span><strong>{{ suscripcion.cobros_generados }}</strong></div>
+                <div><span>Ultimo periodo</span><strong>{{ suscripcion.ultimo_periodo_cobrado or '-' }}</strong></div>
+                <div><span>Ultimo cobro</span><strong>{{ suscripcion.ultimo_cobro_fmt or '-' }}</strong></div>
+            </div>
+            {% if suscripcion.estado == 'suspendida' and suscripcion.fecha_suspension_fmt %}
+            <div class="finance-note">Suspendida desde: <strong>{{ suscripcion.fecha_suspension_fmt }}</strong></div>
+            {% elif suscripcion.estado == 'cancelada' and suscripcion.fecha_cancelacion_fmt %}
+            <div class="finance-note">Cancelada desde: <strong>{{ suscripcion.fecha_cancelacion_fmt }}</strong></div>
+            {% endif %}
+            <div class="credit-card-actions">
+                {% if suscripcion.puede_suspender %}
+                <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/suspender" class="table-action-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <button class="btn btn-sm" type="submit" data-confirm="Suspender esta suscripcion?">Suspender</button>
+                </form>
+                {% endif %}
+                {% if suscripcion.puede_reactivar %}
+                <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/reactivar" class="table-action-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <button class="btn btn-sm btn-primary" type="submit" data-confirm="Reactivar esta suscripcion?">Reactivar</button>
+                </form>
+                {% endif %}
+                {% if suscripcion.puede_cancelar %}
+                <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/cancelar" class="table-action-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <button class="btn btn-sm danger" type="submit" data-confirm="Cancelar definitivamente esta suscripcion?">Cancelar</button>
+                </form>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+        {% if not suscripciones %}
+        <div class="empty-state">Todavia no hay suscripciones en esta tarjeta.</div>
+        {% endif %}
+    </div>
 </section>
 
 <section class="section-band">

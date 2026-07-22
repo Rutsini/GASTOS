@@ -4,7 +4,7 @@ from datetime import date
 from app.db import asegurar_tabla_categorias, get_conn, init_db
 from app.repositories import tarjetas_repository as repo
 from app.utils.money import parse_centavos
-from app.utils.tarjetas_financieras import dividir_en_cuotas, sumar_meses
+from app.utils.tarjetas_financieras import dividir_en_cuotas, sumar_meses, ultimo_dia_mes
 from csv_reader import formato_moneda_ar
 from date_utils import es_fecha_iso_valida, fecha_para_mostrar, normalizar_fecha_a_iso
 
@@ -15,6 +15,7 @@ class TarjetasError(ValueError):
 
 ESTADOS_COMPRA = {"activa", "finalizada", "cancelada"}
 ESTADOS_HISTORIAL = {"", "pago", "anulacion"}
+ESTADOS_SUSCRIPCION = {"activa", "suspendida", "cancelada"}
 
 
 def asegurar_modulo_tarjetas():
@@ -179,6 +180,45 @@ def datos_compra_desde_form(conn, tarjeta_id, form):
     }
 
 
+def fecha_con_dia(year, month, dia):
+    return date(int(year), int(month), min(int(dia), ultimo_dia_mes(int(year), int(month)))).isoformat()
+
+
+def datos_suscripcion_desde_form(conn, tarjeta_id, form):
+    tarjeta = repo.obtener_tarjeta(conn, tarjeta_id)
+    if not tarjeta:
+        raise TarjetasError("La tarjeta no existe.")
+    if int(tarjeta["activa"] or 0) != 1:
+        raise TarjetasError("La tarjeta debe estar activa para agregar suscripciones.")
+
+    nombre = limpiar_texto(form.get("descripcion") or form.get("nombre"), 180)
+    if not nombre:
+        raise TarjetasError("El nombre o concepto de la suscripcion es obligatorio.")
+
+    monto = parse_centavos(form.get("monto_original") or form.get("monto"))
+    if monto is None or monto <= 0:
+        raise TarjetasError("El monto mensual debe ser mayor que cero.")
+
+    fecha_inicio = normalizar_fecha_requerida(
+        form.get("fecha_inicio") or form.get("fecha_compra") or date.today().isoformat(),
+        "inicio",
+    )
+    dia_cobro = int(fecha_inicio.split("-")[2])
+    categoria, subcategoria_id = validar_categoria_subcategoria(conn, form.get("categoria"), form.get("subcategoria_id"))
+    return {
+        "tarjeta_id": int(tarjeta_id),
+        "nombre": nombre,
+        "comercio": limpiar_texto(form.get("comercio"), 160) or None,
+        "monto_centavos": monto,
+        "fecha_inicio": fecha_inicio,
+        "dia_cobro": dia_cobro,
+        "fecha_proximo_cobro": fecha_inicio,
+        "categoria": categoria,
+        "subcategoria_id": subcategoria_id,
+        "observaciones": limpiar_texto(form.get("observaciones"), 800) or None,
+    }
+
+
 def crear_compra_en_cuotas(tarjeta_id, form):
     asegurar_modulo_tarjetas()
     with get_conn() as conn:
@@ -189,6 +229,22 @@ def crear_compra_en_cuotas(tarjeta_id, form):
         generar_cuotas(conn, compra_id, data["cantidad_cuotas"], importes, data["primer_vencimiento"])
         conn.commit()
     return compra_id
+
+
+def crear_suscripcion(tarjeta_id, form):
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        data = datos_suscripcion_desde_form(conn, tarjeta_id, form)
+        suscripcion_id = repo.crear_suscripcion(conn, data)
+        conn.commit()
+    return suscripcion_id
+
+
+def crear_pago_tarjeta(tarjeta_id, form):
+    if parse_bool(form.get("es_suscripcion")):
+        return "suscripcion", crear_suscripcion(tarjeta_id, form)
+    return "compra", crear_compra_en_cuotas(tarjeta_id, form)
 
 
 def generar_cuotas(conn, compra_id, cantidad_cuotas, importes, primer_vencimiento):
@@ -213,6 +269,7 @@ def obtener_detalle_tarjeta(tarjeta_id, filtros=None):
         if not tarjeta:
             raise TarjetasError("La tarjeta no existe.")
         compras_rows = repo.listar_compras_tarjeta(conn, tarjeta_id, filtros)
+        suscripciones_rows = repo.listar_suscripciones_tarjeta(conn, tarjeta_id)
         historial_rows = repo.listar_historial_tarjeta(conn, tarjeta_id, filtros)
         cuotas_por_compra = {row["id"]: [] for row in compras_rows}
         compra_ids = set(cuotas_por_compra)
@@ -222,9 +279,76 @@ def obtener_detalle_tarjeta(tarjeta_id, filtros=None):
     return {
         "tarjeta": presentar_resumen_tarjeta(tarjeta),
         "compras": [presentar_compra(row) for row in compras_rows],
+        "suscripciones": [presentar_suscripcion(row) for row in suscripciones_rows],
         "cuotas_por_compra": cuotas_por_compra,
         "historial": [presentar_historial(row) for row in historial_rows],
     }
+
+
+def generar_cobros_pendientes(tarjeta_id=None, hasta=None):
+    asegurar_modulo_tarjetas()
+    fecha_limite = normalizar_fecha_requerida(hasta or date.today().isoformat(), "cobro")
+    movimientos = []
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        suscripciones = repo.listar_suscripciones_activas_vencidas(conn, fecha_limite, tarjeta_id=tarjeta_id)
+        for suscripcion in suscripciones:
+            proximo = suscripcion["fecha_proximo_cobro"]
+            ultima_fecha_calculada = proximo
+            while proximo <= fecha_limite:
+                periodo = proximo[:7]
+                if not repo.existe_cobro_suscripcion_periodo(conn, suscripcion["id"], periodo):
+                    tx_hash = f"tarjeta-suscripcion-{suscripcion['id']}-{periodo}"
+                    movimiento_id = repo.crear_movimiento_cobro_suscripcion(conn, suscripcion, proximo, periodo, tx_hash)
+                    creado = repo.registrar_cobro_suscripcion(
+                        conn,
+                        suscripcion["id"],
+                        movimiento_id,
+                        periodo,
+                        proximo,
+                        int(suscripcion["monto_centavos"]),
+                    )
+                    if creado and movimiento_id:
+                        movimientos.append(movimiento_id)
+                ultima_fecha_calculada = proximo
+                proximo = sumar_meses(proximo, 1)
+            if ultima_fecha_calculada:
+                repo.actualizar_proximo_cobro_suscripcion(conn, suscripcion["id"], proximo)
+        conn.commit()
+    return movimientos
+
+
+def proximo_cobro_desde_reactivacion(dia_cobro, desde=None):
+    base = date.fromisoformat(normalizar_fecha_requerida(desde or date.today().isoformat(), "reactivacion"))
+    candidata = fecha_con_dia(base.year, base.month, dia_cobro)
+    if candidata < base.isoformat():
+        candidata = sumar_meses(candidata, 1)
+    return candidata
+
+
+def cambiar_estado_suscripcion(suscripcion_id, nuevo_estado, fecha_operacion=None):
+    if nuevo_estado not in ESTADOS_SUSCRIPCION:
+        raise TarjetasError("El estado de suscripcion es invalido.")
+    fecha = normalizar_fecha_requerida(fecha_operacion or date.today().isoformat(), "operacion")
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        suscripcion = repo.obtener_suscripcion(conn, suscripcion_id)
+        if not suscripcion:
+            raise TarjetasError("La suscripcion no existe.")
+        estado_actual = suscripcion["estado"]
+        if nuevo_estado == "suspendida" and estado_actual != "activa":
+            raise TarjetasError("Solo se pueden suspender suscripciones activas.")
+        if nuevo_estado == "activa" and estado_actual != "suspendida":
+            raise TarjetasError("Solo se pueden reactivar suscripciones suspendidas.")
+        if nuevo_estado == "cancelada" and estado_actual not in {"activa", "suspendida"}:
+            raise TarjetasError("Solo se pueden cancelar suscripciones activas o suspendidas.")
+        if nuevo_estado == "activa":
+            proximo = proximo_cobro_desde_reactivacion(int(suscripcion["dia_cobro"]), fecha)
+            repo.actualizar_proximo_cobro_suscripcion(conn, suscripcion_id, proximo)
+        repo.cambiar_estado_suscripcion(conn, suscripcion_id, nuevo_estado, fecha)
+        conn.commit()
+    return int(suscripcion["tarjeta_id"])
 
 
 def pagar_cuota(compra_id=None, cuota_id=None, fecha_pago=None, importe=None):
@@ -377,6 +501,22 @@ def presentar_compra(row):
         "cuotas_pagadas": int(row["cuotas_pagadas"] or 0),
         "cuotas_pendientes": int(row["cuotas_pendientes"] or 0),
         "cuota_actual": int(row["cuota_actual"] or 0),
+    }
+
+
+def presentar_suscripcion(row):
+    return {
+        **dict(row),
+        "monto_fmt": formato_moneda_ar(int(row["monto_centavos"] or 0)),
+        "fecha_inicio_fmt": fecha_para_mostrar(row["fecha_inicio"]),
+        "fecha_proximo_cobro_fmt": fecha_para_mostrar(row["fecha_proximo_cobro"]),
+        "fecha_suspension_fmt": fecha_para_mostrar(row["fecha_suspension"]),
+        "fecha_cancelacion_fmt": fecha_para_mostrar(row["fecha_cancelacion"]),
+        "ultimo_cobro_fmt": fecha_para_mostrar(row["ultimo_cobro"]),
+        "cobros_generados": int(row["cobros_generados"] or 0),
+        "puede_suspender": row["estado"] == "activa",
+        "puede_reactivar": row["estado"] == "suspendida",
+        "puede_cancelar": row["estado"] in {"activa", "suspendida"},
     }
 
 

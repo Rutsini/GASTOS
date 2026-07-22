@@ -154,10 +154,47 @@ def asegurar_schema_tarjetas(conn):
             FOREIGN KEY(movimiento_id) REFERENCES movimientos(id)
         );
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tarjeta_suscripciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tarjeta_id INTEGER NOT NULL,
+            nombre TEXT NOT NULL,
+            comercio TEXT,
+            monto_centavos INTEGER NOT NULL,
+            fecha_inicio TEXT NOT NULL,
+            dia_cobro INTEGER NOT NULL,
+            fecha_proximo_cobro TEXT NOT NULL,
+            categoria TEXT,
+            subcategoria_id INTEGER,
+            observaciones TEXT,
+            estado TEXT NOT NULL DEFAULT 'activa',
+            fecha_suspension TEXT,
+            fecha_cancelacion TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(tarjeta_id) REFERENCES tarjetas(id),
+            FOREIGN KEY(subcategoria_id) REFERENCES subcategorias(id)
+        );
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tarjeta_suscripcion_cobros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            suscripcion_id INTEGER NOT NULL,
+            movimiento_id INTEGER,
+            periodo TEXT NOT NULL,
+            fecha_cobro TEXT NOT NULL,
+            monto_centavos INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(suscripcion_id) REFERENCES tarjeta_suscripciones(id),
+            FOREIGN KEY(movimiento_id) REFERENCES movimientos(id),
+            UNIQUE(suscripcion_id, periodo)
+        );
+    """)
 
     agregar_columna_si_falta(conn, "movimientos", "tarjeta_id", "INTEGER")
     agregar_columna_si_falta(conn, "movimientos", "compra_tarjeta_id", "INTEGER")
     agregar_columna_si_falta(conn, "movimientos", "cuota_tarjeta_id", "INTEGER")
+    agregar_columna_si_falta(conn, "movimientos", "suscripcion_tarjeta_id", "INTEGER")
     agregar_columna_si_falta(conn, "movimientos", "generado_desde_tarjeta", "INTEGER NOT NULL DEFAULT 0")
     agregar_columna_si_falta(conn, "movimientos", "anulado", "INTEGER NOT NULL DEFAULT 0")
     agregar_columna_si_falta(conn, "movimientos", "fecha_anulacion", "TEXT")
@@ -172,12 +209,26 @@ def asegurar_schema_tarjetas(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_historial_tarjeta ON historial_pagos_tarjeta(tarjeta_id);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_historial_fecha ON historial_pagos_tarjeta(fecha_operacion);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_movimientos_tarjeta_refs ON movimientos(tarjeta_id, compra_tarjeta_id, cuota_tarjeta_id);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_movimientos_suscripcion_tarjeta ON movimientos(suscripcion_tarjeta_id);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_movimientos_anulado ON movimientos(anulado);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripciones_tarjeta ON tarjeta_suscripciones(tarjeta_id);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripciones_estado ON tarjeta_suscripciones(estado);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripciones_proximo ON tarjeta_suscripciones(fecha_proximo_cobro);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_suscripcion ON tarjeta_suscripcion_cobros(suscripcion_id);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_movimiento ON tarjeta_suscripcion_cobros(movimiento_id);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_periodo ON tarjeta_suscripcion_cobros(periodo);")
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS ux_movimiento_cuota_tarjeta_activo
         ON movimientos(cuota_tarjeta_id)
         WHERE generado_desde_tarjeta = 1
           AND cuota_tarjeta_id IS NOT NULL
+          AND COALESCE(anulado, 0) = 0;
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_movimiento_suscripcion_periodo_activo
+        ON movimientos(suscripcion_tarjeta_id, substr(fecha, 1, 7))
+        WHERE generado_desde_tarjeta = 1
+          AND suscripcion_tarjeta_id IS NOT NULL
           AND COALESCE(anulado, 0) = 0;
     """)
 

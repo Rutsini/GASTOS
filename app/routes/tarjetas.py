@@ -16,10 +16,21 @@ def redirect_tarjeta(tarjeta_id):
     return redirect(f"/tarjetas/{int(tarjeta_id)}")
 
 
+def registrar_cobros_pendientes(tarjeta_id=None):
+    movimientos = service.generar_cobros_pendientes(tarjeta_id=tarjeta_id)
+    if movimientos:
+        legacy.generar_resumenes_mensuales()
+    return movimientos
+
+
 @bp.route("", methods=["GET"])
 def index():
     estado = (request.args.get("estado") or "").strip()
     q = (request.args.get("q") or "").strip()
+    try:
+        registrar_cobros_pendientes()
+    except service.TarjetasError as exc:
+        flash(str(exc))
     tarjetas = service.listar_tarjetas(estado=estado, q=q)
     return render_template("tarjetas.html", tarjetas=tarjetas, estado=estado, q=q)
 
@@ -101,6 +112,7 @@ def detalle(tarjeta_id):
     }
     periodo = (request.args.get("periodo") or date.today().strftime("%Y-%m")).strip()
     try:
+        registrar_cobros_pendientes(tarjeta_id)
         detalle_data = service.obtener_detalle_tarjeta(tarjeta_id, filtros=filtros)
         categorias, subcategorias = service.obtener_form_options()
         periodo_resumen = service.resumen_cuotas_periodo(tarjeta_id, periodo) if periodo else None
@@ -132,8 +144,8 @@ def nueva_compra(tarjeta_id):
     }
     if request.method == "POST":
         try:
-            service.crear_compra_en_cuotas(tarjeta_id, request.form)
-            flash("Compra en cuotas creada.")
+            tipo, _ = service.crear_pago_tarjeta(tarjeta_id, request.form)
+            flash("Suscripcion creada." if tipo == "suscripcion" else "Compra en cuotas creada.")
             return redirect_tarjeta(tarjeta_id)
         except service.TarjetasError as exc:
             flash(str(exc))
@@ -180,6 +192,49 @@ def pagar_periodo(tarjeta_id):
     except service.TarjetasError as exc:
         flash(str(exc))
     return redirect(f"/tarjetas/{tarjeta_id}?periodo={periodo or ''}")
+
+
+@bp.route("/<int:tarjeta_id>/suscripciones/actualizar", methods=["POST"])
+def actualizar_suscripciones(tarjeta_id):
+    try:
+        movimientos = registrar_cobros_pendientes(tarjeta_id)
+        flash(f"Cobros de suscripciones registrados: {len(movimientos)}.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+    return redirect_tarjeta(tarjeta_id)
+
+
+@bp.route("/suscripciones/<int:suscripcion_id>/suspender", methods=["POST"])
+def suspender_suscripcion(suscripcion_id):
+    try:
+        tarjeta_id = service.cambiar_estado_suscripcion(suscripcion_id, "suspendida")
+        flash("Suscripcion suspendida.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+        tarjeta_id = request.form.get("tarjeta_id")
+    return redirect_tarjeta(tarjeta_id)
+
+
+@bp.route("/suscripciones/<int:suscripcion_id>/reactivar", methods=["POST"])
+def reactivar_suscripcion(suscripcion_id):
+    try:
+        tarjeta_id = service.cambiar_estado_suscripcion(suscripcion_id, "activa")
+        flash("Suscripcion reactivada.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+        tarjeta_id = request.form.get("tarjeta_id")
+    return redirect_tarjeta(tarjeta_id)
+
+
+@bp.route("/suscripciones/<int:suscripcion_id>/cancelar", methods=["POST"])
+def cancelar_suscripcion(suscripcion_id):
+    try:
+        tarjeta_id = service.cambiar_estado_suscripcion(suscripcion_id, "cancelada")
+        flash("Suscripcion cancelada.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+        tarjeta_id = request.form.get("tarjeta_id")
+    return redirect_tarjeta(tarjeta_id)
 
 
 @bp.route("/cuotas/<int:cuota_id>/anular", methods=["POST"])

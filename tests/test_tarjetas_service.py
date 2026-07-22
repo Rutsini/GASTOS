@@ -59,6 +59,16 @@ class TarjetasServiceTest(unittest.TestCase):
             "subcategoria_id": str(self.subcategoria_id),
         })
 
+    def _suscripcion(self, tarjeta_id, nombre="Netflix", monto="1000,00", fecha_inicio="2026-07-05"):
+        return self.service.crear_suscripcion(tarjeta_id, {
+            "descripcion": nombre,
+            "comercio": "Streaming",
+            "monto_original": monto,
+            "fecha_inicio": fecha_inicio,
+            "categoria": "Electronica",
+            "subcategoria_id": str(self.subcategoria_id),
+        })
+
     def test_crea_tarjeta_compra_y_cuotas_con_redondeo(self):
         tarjeta_id = self._tarjeta()
         compra_id = self._compra(tarjeta_id)
@@ -117,6 +127,61 @@ class TarjetasServiceTest(unittest.TestCase):
         self.assertIsNone(cuota_reabierta["movimiento_id"])
         self.assertEqual(movimiento["anulado"], 1)
         self.assertEqual([h["tipo_operacion"] for h in historial], ["pago", "anulacion"])
+
+    def test_suscripcion_genera_cobros_mensuales_sin_duplicar(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-07-05")
+
+        movimientos = self.service.generar_cobros_pendientes(tarjeta_id, "2026-09-30")
+        self.assertEqual(len(movimientos), 3)
+        self.assertEqual(self.service.generar_cobros_pendientes(tarjeta_id, "2026-09-30"), [])
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT periodo, monto_centavos FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? ORDER BY periodo",
+                (suscripcion_id,),
+            ).fetchall()
+            movimientos_db = conn.execute(
+                "SELECT descripcion, monto_centavos, tarjeta_id, suscripcion_tarjeta_id FROM movimientos WHERE suscripcion_tarjeta_id = ? ORDER BY fecha",
+                (suscripcion_id,),
+            ).fetchall()
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual([c["periodo"] for c in cobros], ["2026-07", "2026-08", "2026-09"])
+        self.assertEqual([c["monto_centavos"] for c in cobros], [100000, 100000, 100000])
+        self.assertEqual([m["monto_centavos"] for m in movimientos_db], [-100000, -100000, -100000])
+        self.assertEqual(movimientos_db[0]["descripcion"], "Suscripcion - Netflix")
+        self.assertEqual(movimientos_db[0]["tarjeta_id"], tarjeta_id)
+        self.assertEqual(movimientos_db[0]["suscripcion_tarjeta_id"], suscripcion_id)
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-10-05")
+
+    def test_suscripcion_estados_controlan_cobros(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-07-10")
+
+        self.service.cambiar_estado_suscripcion(suscripcion_id, "suspendida", "2026-07-15")
+        self.assertEqual(self.service.generar_cobros_pendientes(tarjeta_id, "2026-08-31"), [])
+
+        self.service.cambiar_estado_suscripcion(suscripcion_id, "activa", "2026-09-01")
+        movimientos = self.service.generar_cobros_pendientes(tarjeta_id, "2026-09-30")
+        self.assertEqual(len(movimientos), 1)
+
+        self.service.cambiar_estado_suscripcion(suscripcion_id, "cancelada", "2026-09-20")
+        self.assertEqual(self.service.generar_cobros_pendientes(tarjeta_id, "2026-12-31"), [])
+
+        with root_db.get_conn() as conn:
+            suscripcion = conn.execute("SELECT estado, fecha_cancelacion FROM tarjeta_suscripciones WHERE id = ?", (suscripcion_id,)).fetchone()
+            periodos = conn.execute(
+                "SELECT periodo FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? ORDER BY periodo",
+                (suscripcion_id,),
+            ).fetchall()
+
+        self.assertEqual(suscripcion["estado"], "cancelada")
+        self.assertEqual(suscripcion["fecha_cancelacion"], "2026-09-20")
+        self.assertEqual([p["periodo"] for p in periodos], ["2026-09"])
 
 
 if __name__ == "__main__":
