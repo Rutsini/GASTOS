@@ -1,0 +1,16 @@
+from db import (  # noqa: F401
+    BACKUP_DIR,
+    BASE_DIR,
+    DB_PATH,
+    DATA_DIR,
+    LEGACY_DB_PATH,
+    agregar_columna_si_falta,
+    asegurar_schema_reglas,
+    asegurar_schema_tarjetas,
+    asegurar_tabla_categorias,
+    backup_pre_migracion,
+    columnas_tabla,
+    get_conn,
+    init_db,
+    tabla_existe,
+)

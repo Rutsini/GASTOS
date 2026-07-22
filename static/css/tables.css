@@ -1,0 +1,127 @@
+.card[style*="overflow:hidden"] {
+  overflow-x: auto !important;
+}
+
+table,
+.table {
+  width: 100% !important;
+  min-width: 620px;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.rules-form-card {
+  max-width: 860px;
+}
+
+.rules-form-grid {
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.25fr);
+}
+
+.rules-actions-left {
+  justify-content: flex-start;
+}
+
+.rules-card {
+  padding: 0;
+  overflow: visible;
+}
+
+.rules-table {
+  min-width: 820px;
+}
+
+.rules-table td[colspan] {
+  padding: 10px;
+}
+
+.rules-row-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.2fr) 96px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.rules-table .keyword-input {
+  min-width: 260px;
+}
+
+.rules-table .subcategory-select,
+.rules-form-card .subcategory-select {
+  min-width: 280px;
+}
+
+.rules-table .active-select {
+  width: 90px;
+  min-width: 90px;
+}
+
+.rules-table .actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.table th,
+.table td {
+  white-space: nowrap;
+}
+
+.table th.wrap {
+  white-space: normal;
+}
+
+.amount {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-table th,
+.budget-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.budget-table .amount {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.budget-limit-input {
+  width: 130px;
+  min-width: 130px;
+}
+
+.category-admin-list {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.category-admin-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px;
+}
+
+.category-admin-main {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px 120px 100px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.category-admin-actions,
+.subcategory-row,
+.subcategory-new {
+  display: flex;

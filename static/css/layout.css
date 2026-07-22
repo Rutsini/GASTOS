@@ -1,0 +1,121 @@
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 22px 18px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 22px;
+  font-size: 20px;
+  font-weight: 850;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 900;
+}
+
+.sidebar-section { margin: 18px 0; }
+.sidebar-label {
+  margin: 0 8px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-link {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 9px 11px;
+  border-radius: 10px;
+  color: #334155;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.sidebar-link:hover {
+  background: #eef5ff;
+  color: var(--primary);
+}
+
+.sidebar-link.active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(21, 101, 192, 0.2);
+}
+
+.main-area {
+  min-width: 0;
+  padding: 26px 30px 40px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+
+.page-title { margin-bottom: 6px; }
+.page-subtitle { color: var(--muted); font-size: 15px; }
+.page-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.page-content { min-width: 0; }
+
+.amount-visibility-toggle {
+  min-width: 154px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.amount-visibility-icon {
+  width: 20px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.page-content > nav,
+.page-content > div:first-child[style*="display:flex"],
+.page-content > div:first-child[style*="margin: 8px"] {
+  display: none !important;
+}
+
+.page-content > h1:first-child {
+  display: none;
+}
+
+.flash,
+.alert,
+.error {
+  margin-bottom: 14px;
+  padding: 11px 13px !important;
+  border-radius: 12px !important;
+  background: #eaf4ff !important;
+  border: 1px solid #bfdbfe !important;
+  color: #174ea6 !important;
+}

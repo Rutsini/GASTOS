@@ -1,0 +1,47 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Resúmenes</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .card { border: 1px solid #eee; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border-bottom: 1px solid #e8e8e8; padding: 10px; text-align: left; }
+        .ingreso { color: #15803d; font-weight: 700; }
+        .egreso { color: #b91c1c; font-weight: 700; }
+        button { padding: 8px 12px; border: 0; border-radius: 8px; cursor: pointer; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% include "_quick_filters.html" %}
+
+    <table>
+        <thead>
+            <tr>
+                <th>Mes</th>
+                <th>Ingresos</th>
+                <th>Gastos</th>
+                <th>Ahorro / Inversión</th>
+                <th>Cambios de efectivo</th>
+                <th>Disponible</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td><a href="/movimientos?desde={{ r['desde'] }}&hasta={{ r['hasta'] }}">{{ r["ym"] }}</a></td>
+                <td class="amount-income">{{ r["ingresos_fmt"] }}</td>
+                <td class="amount-expense">{{ r["egresos_fmt"] }}</td>
+                <td class="amount-savings">{{ r["ahorro_fmt"] }}</td>
+                <td class="amount-cash-move">{{ r["cambios_fmt"] }}</td>
+                <td class="{{ r['disponible_class'] }}">{{ r["disponible_fmt"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,0 +1,148 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Reportes</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding:20px; background:#f9fafb; color:#333; }
+        nav, .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:end; }
+        button, .btn { display:inline-block; padding:8px 12px; border:0; border-radius:8px; cursor:pointer; background:#eee; color:#111; text-decoration:none; font-size:14px; }
+        .primary { background:#004481; color:white; }
+        .card { background:white; border:1px solid #eee; border-radius:10px; padding:14px; margin-bottom:14px; }
+        .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px; }
+        table { border-collapse:collapse; width:100%; background:white; }
+        th, td { border-bottom:1px solid #e8e8e8; padding:10px; text-align:left; }
+        th { background:#f5f5f5; }
+        input, select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+        label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:#666; }
+        canvas { max-height:320px; }
+        .ingreso { color:#15803d; font-weight:700; }
+        .egreso { color:#b91c1c; font-weight:700; }
+        .chart-empty { min-height:220px; display:flex; align-items:center; justify-content:center; color:#6b7280; border:1px dashed #d1d5db; border-radius:8px; }
+        .chart-hidden, .chart-empty[hidden] { display:none !important; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% include "_quick_filters.html" %}
+
+    <div class="card">
+        <form class="filters" method="get" action="/reportes">
+            <label>Desde<input type="date" name="desde" value="{{ filtros.desde }}"></label>
+            <label>Hasta<input type="date" name="hasta" value="{{ filtros.hasta }}"></label>
+            <label>Categoría
+                <select name="categoria">
+                    <option value="">Todas</option>
+                    {% for cat in categorias %}
+                    <option value="{{ cat }}" {% if filtros.categoria == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Tipo
+                <select name="tipo_categoria">
+                    <option value="">Todos</option>
+                    {% for value, label in tipos.items() %}
+                    <option value="{{ value }}" {% if filtros.tipo_categoria == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button class="primary" type="submit">Filtrar</button>
+            <a class="btn" href="/reportes">Limpiar</a>
+        </form>
+    </div>
+
+    <div class="reports-grid">
+        <div class="card"><h3>Ingresos, gastos y ahorro por mes</h3><canvas id="barMes"></canvas><div id="barMesEmpty" class="chart-empty chart-hidden">No hay datos para mostrar</div></div>
+        <div class="card"><h3>Gastos por categoría</h3><canvas id="donutCategorias"></canvas><div id="donutCategoriasEmpty" class="chart-empty chart-hidden">No hay datos para mostrar</div></div>
+        <div class="card"><h3>Disponible mensual</h3><canvas id="lineBalance"></canvas><div id="lineBalanceEmpty" class="chart-empty chart-hidden">No hay datos para mostrar</div></div>
+    </div>
+
+    <div class="reports-grid">
+        <div class="card report-card-wide">
+            <h3>Resumen por mes</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th class="wrap">Ahorro / Inversión</th><th class="wrap">Cambios de efectivo</th><th>Disponible</th></tr></thead>
+                    <tbody>
+                    {% for row in resumen_mes %}
+                    <tr><td>{{ row.ym }}</td><td class="amount-income amount">{{ row.ingresos_fmt }}</td><td class="amount-expense amount">{{ row.gastos_fmt }}</td><td class="amount-savings amount">{{ row.ahorro_fmt }}</td><td class="amount-cash-move amount">{{ row.cambios_fmt }}</td><td class="{{ row.disponible_class }} amount">{{ row.disponible_fmt }}</td></tr>
+                    {% endfor %}
+                    {% if not resumen_mes %}
+                    <tr><td colspan="6" class="muted">No hay datos para mostrar.</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Resumen por categoría</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead><tr><th>Categoría</th><th>Tipo</th><th>Gastos</th><th>Ingresos / reintegros</th><th>Neto</th></tr></thead>
+                    <tbody>
+                    {% for row in resumen_categoria %}
+                    <tr><td>{{ row.categoria }}</td><td>{{ row.tipo_label }}</td><td class="amount-expense amount">{{ row.gastos_fmt }}</td><td class="amount-income amount">{{ row.ingresos_fmt }}</td><td class="{{ row.amount_class }} amount">{{ row.total_fmt }}</td></tr>
+                    {% endfor %}
+                    {% if not resumen_categoria %}
+                    <tr><td colspan="5" class="muted">No hay datos para mostrar.</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Movimientos internos</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead><tr><th>Categoría</th><th>Total</th></tr></thead>
+                    <tbody>
+                    {% for row in movimientos_internos %}
+                    <tr><td>{{ row.categoria }}</td><td class="amount-cash-move amount">{{ row.total_fmt }}</td></tr>
+                    {% endfor %}
+                    {% if not movimientos_internos %}
+                    <tr><td colspan="2" class="muted">No hay movimientos internos para los filtros seleccionados.</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Ahorro / Inversión por categoría</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead><tr><th>Categoría</th><th>Total</th></tr></thead>
+                    <tbody>
+                    {% for row in resumen_ahorro %}
+                    <tr><td>{{ row.categoria }}</td><td class="amount-savings amount">{{ row.total_fmt }}</td></tr>
+                    {% endfor %}
+                    {% if not resumen_ahorro %}
+                    <tr><td colspan="2" class="muted">No hay ahorro o inversión para los filtros seleccionados.</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Top 5 categorías con más gasto</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead><tr><th>Categoría</th><th>Gasto</th></tr></thead>
+                    <tbody>
+                    {% for row in top_gastos %}
+                    <tr><td>{{ row.categoria }}</td><td class="amount-expense amount">{{ row.gasto_fmt }}</td></tr>
+                    {% endfor %}
+                    {% if not top_gastos %}
+                    <tr><td colspan="2" class="muted">No hay gastos reales para los filtros seleccionados.</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script id="report-chart-data" type="application/json">{{ chart_data | tojson }}</script>
+    <script src="{{ url_for('static', filename='js/reportes.js') }}"></script>
+</body>
+</html>
