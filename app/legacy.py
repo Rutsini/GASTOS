@@ -28,6 +28,7 @@ from app.services.config_service import (
     save_config,
 )
 from app.services.reportes_service import build_reportes_context
+from app.services.movimientos_service import MovimientosError, eliminar_movimientos as eliminar_movimientos_service
 from app.utils.dates import current_month, month_label_ar, normalize_month
 from app.utils.money import centavos_to_input, parse_centavos
 from app.utils.validators import is_allowed_file
@@ -2598,14 +2599,29 @@ def exportar_datos_completos():
     )
 
 def eliminar_movimientos():
-    ids = [int(x) for x in request.form.getlist("ids") if x.isdigit()]
-    if ids:
-        placeholders = ",".join(["?"] * len(ids))
-        with get_conn() as conn:
-            conn.execute(f"DELETE FROM movimientos WHERE id IN ({placeholders})", ids)
-            conn.commit()
-        generar_resumenes_mensuales()
-        flash(f"Movimientos eliminados: {len(ids)}")
+    try:
+        resultado = eliminar_movimientos_service(request.form.getlist("ids"))
+        if resultado["eliminados"]:
+            generar_resumenes_mensuales()
+            detalle = []
+            if resultado["cuotas_reabiertas"]:
+                detalle.append(f"cuotas reabiertas: {resultado['cuotas_reabiertas']}")
+            if resultado["cobros_suscripcion_eliminados"]:
+                detalle.append(f"cobros de suscripcion revertidos: {resultado['cobros_suscripcion_eliminados']}")
+            if resultado["no_encontrados"]:
+                detalle.append(f"IDs no encontrados: {resultado['no_encontrados']}")
+            mensaje = f"Movimientos eliminados correctamente: {resultado['eliminados']}."
+            if detalle:
+                mensaje += " " + "; ".join(detalle) + "."
+            flash(mensaje)
+        else:
+            flash("No se encontraron movimientos para eliminar.")
+    except MovimientosError as exc:
+        app.logger.warning("movimientos eliminar validacion: %s", exc)
+        flash(str(exc))
+    except Exception:
+        app.logger.exception("movimientos eliminar error ids=%s", request.form.getlist("ids"))
+        flash("Ocurrio un error al eliminar los movimientos. No se realizaron cambios.")
     return ("", 302, {"Location": "/movimientos"})
 
 if __name__ == "__main__":
