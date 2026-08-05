@@ -128,9 +128,10 @@ def crear_suscripcion(conn, data):
     cur = conn.execute("""
         INSERT INTO tarjeta_suscripciones (
             tarjeta_id, nombre, comercio, monto_centavos, fecha_inicio, dia_cobro,
-            fecha_proximo_cobro, categoria, subcategoria_id, observaciones, estado
+            fecha_proximo_cobro, categoria, subcategoria_id, observaciones, estado,
+            monto_inicial_centavos
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activa')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activa', ?)
     """, (
         data["tarjeta_id"],
         data["nombre"],
@@ -142,6 +143,7 @@ def crear_suscripcion(conn, data):
         data.get("categoria"),
         data.get("subcategoria_id"),
         data.get("observaciones"),
+        data["monto_centavos"],
     ))
     return cur.lastrowid
 
@@ -292,7 +294,7 @@ def listar_suscripciones_tarjeta(conn, tarjeta_id):
             s.*,
             COUNT(c.id) AS cobros_generados,
             MAX(c.periodo) AS ultimo_periodo_cobrado,
-            MAX(c.fecha_cobro) AS ultimo_cobro
+            MAX(COALESCE(c.fecha_pago, c.fecha_cobro)) AS ultimo_cobro
         FROM tarjeta_suscripciones s
         LEFT JOIN tarjeta_suscripcion_cobros c ON c.suscripcion_id = s.id
         WHERE s.tarjeta_id = ?
@@ -376,7 +378,15 @@ def existe_cobro_suscripcion_periodo(conn, suscripcion_id, periodo):
     return bool(row)
 
 
-def crear_movimiento_cobro_suscripcion(conn, suscripcion, fecha_cobro, periodo, tx_hash):
+def obtener_cobro_suscripcion_periodo(conn, suscripcion_id, periodo):
+    return conn.execute("""
+        SELECT *
+        FROM tarjeta_suscripcion_cobros
+        WHERE suscripcion_id = ? AND periodo = ?
+    """, (int(suscripcion_id), periodo)).fetchone()
+
+
+def crear_movimiento_cobro_suscripcion(conn, suscripcion, fecha_pago, periodo, monto_centavos, tx_hash):
     descripcion = f"Suscripcion - {suscripcion['nombre']}"
     cur = conn.execute("""
         INSERT OR IGNORE INTO movimientos (
@@ -387,10 +397,10 @@ def crear_movimiento_cobro_suscripcion(conn, suscripcion, fecha_cobro, periodo, 
         VALUES (?, 'tarjetas', NULL, ?, ?, ?, ?, ?, ?, 'manual', 1, ?, ?, 1, 0)
     """, (
         tx_hash,
-        fecha_cobro,
+        fecha_pago,
         descripcion,
-        -abs(int(suscripcion["monto_centavos"])),
-        str(-abs(int(suscripcion["monto_centavos"])) / 100).replace(".", ","),
+        -abs(int(monto_centavos)),
+        str(-abs(int(monto_centavos)) / 100).replace(".", ","),
         suscripcion["categoria"],
         suscripcion["subcategoria_id"],
         suscripcion["tarjeta_id"],
@@ -402,20 +412,59 @@ def crear_movimiento_cobro_suscripcion(conn, suscripcion, fecha_cobro, periodo, 
     return row["id"] if row else None
 
 
-def registrar_cobro_suscripcion(conn, suscripcion_id, movimiento_id, periodo, fecha_cobro, monto_centavos):
+def registrar_cobro_suscripcion(conn, suscripcion_id, movimiento_id, periodo, fecha_cobro, monto_centavos, fecha_pago, origen):
     cur = conn.execute("""
         INSERT OR IGNORE INTO tarjeta_suscripcion_cobros (
-            suscripcion_id, movimiento_id, periodo, fecha_cobro, monto_centavos
+            suscripcion_id, movimiento_id, periodo, fecha_cobro, monto_centavos,
+            fecha_pago, origen, estado, updated_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pagado', datetime('now'))
     """, (
         int(suscripcion_id),
         int(movimiento_id) if movimiento_id else None,
         periodo,
         fecha_cobro,
         int(monto_centavos),
+        fecha_pago,
+        origen,
     ))
     return cur.rowcount == 1
+
+
+def obtener_cambio_monto_para_periodo(conn, suscripcion_id, periodo):
+    return conn.execute("""
+        SELECT *
+        FROM tarjeta_suscripcion_historial_montos
+        WHERE suscripcion_id = ? AND periodo_desde <= ?
+        ORDER BY periodo_desde DESC, id DESC
+        LIMIT 1
+    """, (int(suscripcion_id), periodo)).fetchone()
+
+
+def crear_historial_monto_suscripcion(conn, suscripcion_id, monto_anterior, monto_nuevo, periodo_desde, usuario_id=None):
+    cur = conn.execute("""
+        INSERT INTO tarjeta_suscripcion_historial_montos (
+            suscripcion_id, monto_anterior_centavos, monto_nuevo_centavos,
+            periodo_desde, usuario_id
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        int(suscripcion_id),
+        int(monto_anterior),
+        int(monto_nuevo),
+        periodo_desde,
+        usuario_id,
+    ))
+    return cur.lastrowid
+
+
+def actualizar_monto_suscripcion(conn, suscripcion_id, monto_centavos):
+    conn.execute(f"""
+        UPDATE tarjeta_suscripciones
+        SET monto_centavos = ?,
+            updated_at = {now_sql()}
+        WHERE id = ?
+    """, (int(monto_centavos), int(suscripcion_id)))
 
 
 def obtener_primera_cuota_pendiente(conn, compra_id):

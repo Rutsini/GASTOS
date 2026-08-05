@@ -68,6 +68,8 @@
                 <div><span>Monto mensual</span><strong>{{ suscripcion.monto_fmt }}</strong></div>
                 <div><span>Fecha de inicio</span><strong>{{ suscripcion.fecha_inicio_fmt }}</strong></div>
                 <div><span>Proximo cobro</span><strong>{{ suscripcion.fecha_proximo_cobro_fmt or '-' }}</strong></div>
+                <div><span>Periodo pendiente</span><strong>{{ suscripcion.periodo_pendiente or '-' }}</strong></div>
+                <div><span>Monto del periodo</span><strong>{{ suscripcion.monto_proximo_fmt }}</strong></div>
                 <div><span>Cobros generados</span><strong>{{ suscripcion.cobros_generados }}</strong></div>
                 <div><span>Ultimo periodo</span><strong>{{ suscripcion.ultimo_periodo_cobrado or '-' }}</strong></div>
                 <div><span>Ultimo cobro</span><strong>{{ suscripcion.ultimo_cobro_fmt or '-' }}</strong></div>
@@ -78,6 +80,44 @@
             <div class="finance-note">Cancelada desde: <strong>{{ suscripcion.fecha_cancelacion_fmt }}</strong></div>
             {% endif %}
             <div class="credit-card-actions">
+                {% if suscripcion.puede_editar_monto %}
+                <details class="subscription-action-detail">
+                    <summary class="btn btn-sm">Editar monto</summary>
+                    <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/monto" class="subscription-inline-form">
+                        <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                        <div class="form-grid compact-form-grid">
+                            <label>
+                                Suscripcion
+                                <input type="text" value="{{ suscripcion.nombre }}" disabled>
+                            </label>
+                            <label>
+                                Monto actual
+                                <input type="text" value="{{ suscripcion.monto_fmt }}" disabled>
+                            </label>
+                            <label>
+                                Nuevo monto
+                                <input type="text" name="nuevo_monto" required inputmode="decimal" placeholder="0,00">
+                            </label>
+                            <label>
+                                Desde periodo
+                                <input type="month" name="periodo_desde" value="{{ suscripcion.periodo_desde_defecto }}" required>
+                            </label>
+                        </div>
+                        <div class="credit-card-actions">
+                            <button class="btn btn-sm btn-primary" type="submit" data-confirm="Aplicar el nuevo monto desde el periodo indicado?">Guardar cambios</button>
+                        </div>
+                    </form>
+                </details>
+                {% endif %}
+                {% if suscripcion.puede_pagar %}
+                <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/pagar" class="table-action-form subscription-pay-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <input type="date" name="fecha_pago" value="">
+                    <button class="btn btn-sm btn-primary" type="submit" data-confirm="Se registrara el pago de {{ suscripcion.nombre }} correspondiente al periodo {{ suscripcion.periodo_pendiente }} por {{ suscripcion.monto_proximo_fmt }}. Este periodo no volvera a cobrarse automaticamente.">Pagar</button>
+                </form>
+                {% elif suscripcion.estado == 'activa' %}
+                <button class="btn btn-sm" type="button" disabled>Periodo pagado</button>
+                {% endif %}
                 {% if suscripcion.puede_suspender %}
                 <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/suspender" class="table-action-form">
                     <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">

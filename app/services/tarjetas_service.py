@@ -16,6 +16,7 @@ class TarjetasError(ValueError):
 ESTADOS_COMPRA = {"activa", "finalizada", "cancelada"}
 ESTADOS_HISTORIAL = {"", "pago", "anulacion"}
 ESTADOS_SUSCRIPCION = {"activa", "suspendida", "cancelada"}
+ORIGENES_COBRO_SUSCRIPCION = {"manual", "automatico"}
 
 
 def asegurar_modulo_tarjetas():
@@ -184,6 +185,35 @@ def fecha_con_dia(year, month, dia):
     return date(int(year), int(month), min(int(dia), ultimo_dia_mes(int(year), int(month)))).isoformat()
 
 
+def validar_periodo_mes(valor, campo="periodo"):
+    periodo = limpiar_texto(valor, 7)
+    if len(periodo) != 7 or periodo[4] != "-":
+        raise TarjetasError(f"El {campo} debe tener formato AAAA-MM.")
+    try:
+        date.fromisoformat(f"{periodo}-01")
+    except ValueError:
+        raise TarjetasError(f"El {campo} es invalido.")
+    return periodo
+
+
+def monto_suscripcion_para_periodo(conn, suscripcion, periodo):
+    periodo = validar_periodo_mes(periodo)
+    cambio = repo.obtener_cambio_monto_para_periodo(conn, suscripcion["id"], periodo)
+    if cambio:
+        return int(cambio["monto_nuevo_centavos"])
+    base = suscripcion["monto_inicial_centavos"]
+    if base is None:
+        base = suscripcion["monto_centavos"]
+    return int(base or 0)
+
+
+def siguiente_fecha_no_pagada(conn, suscripcion_id, fecha_desde):
+    proximo = normalizar_fecha_requerida(fecha_desde, "proximo cobro")
+    while repo.existe_cobro_suscripcion_periodo(conn, suscripcion_id, proximo[:7]):
+        proximo = sumar_meses(proximo, 1)
+    return proximo
+
+
 def datos_suscripcion_desde_form(conn, tarjeta_id, form):
     tarjeta = repo.obtener_tarjeta(conn, tarjeta_id)
     if not tarjeta:
@@ -276,10 +306,11 @@ def obtener_detalle_tarjeta(tarjeta_id, filtros=None):
         for cuota in repo.listar_cuotas_tarjeta(conn, tarjeta_id):
             if cuota["compra_tarjeta_id"] in compra_ids:
                 cuotas_por_compra[cuota["compra_tarjeta_id"]].append(presentar_cuota(cuota))
+        suscripciones = [presentar_suscripcion(row, conn) for row in suscripciones_rows]
     return {
         "tarjeta": presentar_resumen_tarjeta(tarjeta),
         "compras": [presentar_compra(row) for row in compras_rows],
-        "suscripciones": [presentar_suscripcion(row) for row in suscripciones_rows],
+        "suscripciones": suscripciones,
         "cuotas_por_compra": cuotas_por_compra,
         "historial": [presentar_historial(row) for row in historial_rows],
     }
@@ -294,28 +325,163 @@ def generar_cobros_pendientes(tarjeta_id=None, hasta=None):
         suscripciones = repo.listar_suscripciones_activas_vencidas(conn, fecha_limite, tarjeta_id=tarjeta_id)
         for suscripcion in suscripciones:
             proximo = suscripcion["fecha_proximo_cobro"]
-            ultima_fecha_calculada = proximo
             while proximo <= fecha_limite:
-                periodo = proximo[:7]
-                if not repo.existe_cobro_suscripcion_periodo(conn, suscripcion["id"], periodo):
-                    tx_hash = f"tarjeta-suscripcion-{suscripcion['id']}-{periodo}"
-                    movimiento_id = repo.crear_movimiento_cobro_suscripcion(conn, suscripcion, proximo, periodo, tx_hash)
-                    creado = repo.registrar_cobro_suscripcion(
-                        conn,
-                        suscripcion["id"],
-                        movimiento_id,
-                        periodo,
-                        proximo,
-                        int(suscripcion["monto_centavos"]),
-                    )
-                    if creado and movimiento_id:
-                        movimientos.append(movimiento_id)
-                ultima_fecha_calculada = proximo
+                movimiento_id = procesar_cobro_suscripcion(
+                    conn,
+                    suscripcion,
+                    fecha_prevista=proximo,
+                    fecha_pago=proximo,
+                    origen="automatico",
+                )
+                if movimiento_id:
+                    movimientos.append(movimiento_id)
                 proximo = sumar_meses(proximo, 1)
-            if ultima_fecha_calculada:
-                repo.actualizar_proximo_cobro_suscripcion(conn, suscripcion["id"], proximo)
+            repo.actualizar_proximo_cobro_suscripcion(
+                conn,
+                suscripcion["id"],
+                siguiente_fecha_no_pagada(conn, suscripcion["id"], proximo),
+            )
         conn.commit()
     return movimientos
+
+
+def procesar_cobro_suscripcion(conn, suscripcion, fecha_prevista, fecha_pago, origen):
+    if origen not in ORIGENES_COBRO_SUSCRIPCION:
+        raise TarjetasError("El origen del cobro de suscripcion es invalido.")
+    if suscripcion["estado"] == "cancelada":
+        raise TarjetasError("No se puede cobrar una suscripcion cancelada.")
+    if origen == "automatico" and suscripcion["estado"] != "activa":
+        raise TarjetasError("Solo las suscripciones activas generan cobros automaticos.")
+    if origen == "manual" and suscripcion["estado"] not in {"activa", "suspendida"}:
+        raise TarjetasError("Solo se pueden pagar suscripciones activas o suspendidas.")
+
+    fecha_prevista = normalizar_fecha_requerida(fecha_prevista, "cobro")
+    fecha_pago = normalizar_fecha_requerida(fecha_pago, "pago")
+    periodo = fecha_prevista[:7]
+    if repo.obtener_cobro_suscripcion_periodo(conn, suscripcion["id"], periodo):
+        return None
+
+    monto_centavos = monto_suscripcion_para_periodo(conn, suscripcion, periodo)
+    if monto_centavos <= 0:
+        raise TarjetasError("El monto de la suscripcion debe ser mayor que cero.")
+
+    tx_hash = f"tarjeta-suscripcion-{suscripcion['id']}-{periodo}"
+    movimiento_id = repo.crear_movimiento_cobro_suscripcion(
+        conn,
+        suscripcion,
+        fecha_pago,
+        periodo,
+        monto_centavos,
+        tx_hash,
+    )
+    creado = repo.registrar_cobro_suscripcion(
+        conn,
+        suscripcion["id"],
+        movimiento_id,
+        periodo,
+        fecha_prevista,
+        monto_centavos,
+        fecha_pago,
+        origen,
+    )
+    if not creado:
+        raise TarjetasError("El periodo de la suscripcion ya fue pagado.")
+    return movimiento_id
+
+
+def pagar_suscripcion(suscripcion_id, fecha_pago=None):
+    asegurar_modulo_tarjetas()
+    fecha = normalizar_fecha_requerida(fecha_pago or date.today().isoformat(), "pago")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        suscripcion = repo.obtener_suscripcion(conn, suscripcion_id)
+        if not suscripcion:
+            raise TarjetasError("La suscripcion no existe.")
+        if suscripcion["estado"] == "cancelada":
+            raise TarjetasError("No se puede pagar una suscripcion cancelada.")
+        if suscripcion["estado"] == "suspendida":
+            fecha_suspension = suscripcion["fecha_suspension"] or fecha
+            if suscripcion["fecha_proximo_cobro"] > fecha_suspension:
+                raise TarjetasError("La suscripcion suspendida no tiene periodos pendientes anteriores a la suspension.")
+
+        fecha_prevista = suscripcion["fecha_proximo_cobro"]
+        periodo = fecha_prevista[:7]
+        if repo.obtener_cobro_suscripcion_periodo(conn, suscripcion_id, periodo):
+            repo.actualizar_proximo_cobro_suscripcion(
+                conn,
+                suscripcion_id,
+                siguiente_fecha_no_pagada(conn, suscripcion_id, fecha_prevista),
+            )
+            conn.commit()
+            raise TarjetasError("Ese periodo ya fue pagado.")
+
+        movimiento_id = procesar_cobro_suscripcion(
+            conn,
+            suscripcion,
+            fecha_prevista=fecha_prevista,
+            fecha_pago=fecha,
+            origen="manual",
+        )
+        proximo = siguiente_fecha_no_pagada(conn, suscripcion_id, sumar_meses(fecha_prevista, 1))
+        repo.actualizar_proximo_cobro_suscripcion(conn, suscripcion_id, proximo)
+        monto = monto_suscripcion_para_periodo(conn, suscripcion, periodo)
+        conn.commit()
+    return {
+        "tarjeta_id": int(suscripcion["tarjeta_id"]),
+        "movimiento_id": movimiento_id,
+        "periodo": periodo,
+        "monto_centavos": monto,
+        "monto_fmt": formato_moneda_ar(monto),
+        "proximo_cobro": proximo,
+    }
+
+
+def editar_monto_suscripcion(suscripcion_id, form, usuario_id=None):
+    asegurar_modulo_tarjetas()
+    nuevo_monto = parse_centavos(form.get("monto") or form.get("nuevo_monto") or "")
+    if nuevo_monto is None:
+        raise TarjetasError("El nuevo monto es obligatorio y debe ser numerico.")
+    if nuevo_monto <= 0:
+        raise TarjetasError("El nuevo monto debe ser mayor que cero.")
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        suscripcion = repo.obtener_suscripcion(conn, suscripcion_id)
+        if not suscripcion:
+            raise TarjetasError("La suscripcion no existe.")
+        if suscripcion["estado"] == "cancelada":
+            raise TarjetasError("No se puede modificar el monto de una suscripcion cancelada.")
+        monto_actual = int(suscripcion["monto_centavos"] or 0)
+        if nuevo_monto == monto_actual:
+            raise TarjetasError("El nuevo monto no puede ser igual al monto actual.")
+
+        periodo_pendiente = siguiente_fecha_no_pagada(
+            conn,
+            suscripcion_id,
+            suscripcion["fecha_proximo_cobro"],
+        )[:7]
+        periodo_desde = limpiar_texto(form.get("periodo_desde"), 7) or periodo_pendiente
+        periodo_desde = validar_periodo_mes(periodo_desde, "periodo desde")
+        if periodo_desde < periodo_pendiente:
+            raise TarjetasError("El cambio solo puede aplicarse desde el proximo periodo pendiente o uno posterior.")
+
+        repo.crear_historial_monto_suscripcion(
+            conn,
+            suscripcion_id,
+            monto_actual,
+            nuevo_monto,
+            periodo_desde,
+            usuario_id=usuario_id,
+        )
+        repo.actualizar_monto_suscripcion(conn, suscripcion_id, nuevo_monto)
+        conn.commit()
+    return {
+        "tarjeta_id": int(suscripcion["tarjeta_id"]),
+        "monto_anterior_centavos": monto_actual,
+        "monto_nuevo_centavos": nuevo_monto,
+        "monto_nuevo_fmt": formato_moneda_ar(nuevo_monto),
+        "periodo_desde": periodo_desde,
+    }
 
 
 def proximo_cobro_desde_reactivacion(dia_cobro, desde=None):
@@ -504,16 +670,29 @@ def presentar_compra(row):
     }
 
 
-def presentar_suscripcion(row):
+def presentar_suscripcion(row, conn=None):
+    periodo_pendiente = row["fecha_proximo_cobro"][:7] if row["fecha_proximo_cobro"] else ""
+    monto_proximo = int(row["monto_centavos"] or 0)
+    if conn and periodo_pendiente:
+        monto_proximo = monto_suscripcion_para_periodo(conn, row, periodo_pendiente)
+    puede_pagar = row["estado"] == "activa"
+    if row["estado"] == "suspendida" and row["fecha_suspension"] and row["fecha_proximo_cobro"]:
+        puede_pagar = row["fecha_proximo_cobro"] <= row["fecha_suspension"]
     return {
         **dict(row),
         "monto_fmt": formato_moneda_ar(int(row["monto_centavos"] or 0)),
+        "monto_proximo_centavos": monto_proximo,
+        "monto_proximo_fmt": formato_moneda_ar(monto_proximo),
         "fecha_inicio_fmt": fecha_para_mostrar(row["fecha_inicio"]),
         "fecha_proximo_cobro_fmt": fecha_para_mostrar(row["fecha_proximo_cobro"]),
         "fecha_suspension_fmt": fecha_para_mostrar(row["fecha_suspension"]),
         "fecha_cancelacion_fmt": fecha_para_mostrar(row["fecha_cancelacion"]),
         "ultimo_cobro_fmt": fecha_para_mostrar(row["ultimo_cobro"]),
         "cobros_generados": int(row["cobros_generados"] or 0),
+        "periodo_pendiente": periodo_pendiente,
+        "periodo_desde_defecto": periodo_pendiente,
+        "puede_editar_monto": row["estado"] in {"activa", "suspendida"},
+        "puede_pagar": puede_pagar,
         "puede_suspender": row["estado"] == "activa",
         "puede_reactivar": row["estado"] == "suspendida",
         "puede_cancelar": row["estado"] in {"activa", "suspendida"},

@@ -204,6 +204,38 @@ def actualizar_suscripciones(tarjeta_id):
     return redirect_tarjeta(tarjeta_id)
 
 
+@bp.route("/suscripciones/<int:suscripcion_id>/monto", methods=["POST"])
+def editar_monto_suscripcion(suscripcion_id):
+    tarjeta_id = request.form.get("tarjeta_id")
+    try:
+        resultado = service.editar_monto_suscripcion(suscripcion_id, request.form)
+        tarjeta_id = resultado["tarjeta_id"]
+        flash(
+            "Monto actualizado a "
+            f"{resultado['monto_nuevo_fmt']} desde el periodo {resultado['periodo_desde']}."
+        )
+    except service.TarjetasError as exc:
+        flash(str(exc))
+    return redirect_tarjeta(tarjeta_id)
+
+
+@bp.route("/suscripciones/<int:suscripcion_id>/pagar", methods=["POST"])
+def pagar_suscripcion(suscripcion_id):
+    tarjeta_id = request.form.get("tarjeta_id")
+    try:
+        resultado = service.pagar_suscripcion(suscripcion_id, request.form.get("fecha_pago"))
+        tarjeta_id = resultado["tarjeta_id"]
+        if resultado["movimiento_id"]:
+            legacy.generar_resumenes_mensuales()
+        flash(
+            "Pago de suscripcion registrado para el periodo "
+            f"{resultado['periodo']} por {resultado['monto_fmt']}."
+        )
+    except service.TarjetasError as exc:
+        flash(str(exc))
+    return redirect_tarjeta(tarjeta_id)
+
+
 @bp.route("/suscripciones/<int:suscripcion_id>/suspender", methods=["POST"])
 def suspender_suscripcion(suscripcion_id):
     try:

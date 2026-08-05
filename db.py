@@ -184,10 +184,26 @@ def asegurar_schema_tarjetas(conn):
             periodo TEXT NOT NULL,
             fecha_cobro TEXT NOT NULL,
             monto_centavos INTEGER NOT NULL,
+            fecha_pago TEXT,
+            origen TEXT NOT NULL DEFAULT 'automatico',
+            estado TEXT NOT NULL DEFAULT 'pagado',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT,
             FOREIGN KEY(suscripcion_id) REFERENCES tarjeta_suscripciones(id),
             FOREIGN KEY(movimiento_id) REFERENCES movimientos(id),
             UNIQUE(suscripcion_id, periodo)
+        );
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tarjeta_suscripcion_historial_montos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            suscripcion_id INTEGER NOT NULL,
+            monto_anterior_centavos INTEGER NOT NULL,
+            monto_nuevo_centavos INTEGER NOT NULL,
+            periodo_desde TEXT NOT NULL,
+            fecha_modificacion TEXT NOT NULL DEFAULT (datetime('now')),
+            usuario_id TEXT,
+            FOREIGN KEY(suscripcion_id) REFERENCES tarjeta_suscripciones(id)
         );
     """)
 
@@ -198,6 +214,23 @@ def asegurar_schema_tarjetas(conn):
     agregar_columna_si_falta(conn, "movimientos", "generado_desde_tarjeta", "INTEGER NOT NULL DEFAULT 0")
     agregar_columna_si_falta(conn, "movimientos", "anulado", "INTEGER NOT NULL DEFAULT 0")
     agregar_columna_si_falta(conn, "movimientos", "fecha_anulacion", "TEXT")
+    agregar_columna_si_falta(conn, "tarjeta_suscripciones", "monto_inicial_centavos", "INTEGER")
+    agregar_columna_si_falta(conn, "tarjeta_suscripcion_cobros", "fecha_pago", "TEXT")
+    agregar_columna_si_falta(conn, "tarjeta_suscripcion_cobros", "origen", "TEXT NOT NULL DEFAULT 'automatico'")
+    agregar_columna_si_falta(conn, "tarjeta_suscripcion_cobros", "estado", "TEXT NOT NULL DEFAULT 'pagado'")
+    agregar_columna_si_falta(conn, "tarjeta_suscripcion_cobros", "updated_at", "TEXT")
+    conn.execute("""
+        UPDATE tarjeta_suscripciones
+        SET monto_inicial_centavos = monto_centavos
+        WHERE monto_inicial_centavos IS NULL
+    """)
+    conn.execute("""
+        UPDATE tarjeta_suscripcion_cobros
+        SET fecha_pago = COALESCE(fecha_pago, fecha_cobro),
+            origen = COALESCE(NULLIF(TRIM(origen), ''), 'automatico'),
+            estado = COALESCE(NULLIF(TRIM(estado), ''), 'pagado'),
+            updated_at = COALESCE(updated_at, created_at, datetime('now'))
+    """)
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjetas_activa ON tarjetas(activa);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_compras_tarjeta_tarjeta_id ON compras_tarjeta(tarjeta_id);")
@@ -217,6 +250,8 @@ def asegurar_schema_tarjetas(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_suscripcion ON tarjeta_suscripcion_cobros(suscripcion_id);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_movimiento ON tarjeta_suscripcion_cobros(movimiento_id);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_periodo ON tarjeta_suscripcion_cobros(periodo);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_historial_montos_suscripcion ON tarjeta_suscripcion_historial_montos(suscripcion_id);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_historial_montos_periodo ON tarjeta_suscripcion_historial_montos(periodo_desde);")
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS ux_movimiento_cuota_tarjeta_activo
         ON movimientos(cuota_tarjeta_id)

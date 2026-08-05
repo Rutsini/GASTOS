@@ -158,6 +158,181 @@ class TarjetasServiceTest(unittest.TestCase):
         self.assertEqual(movimientos_db[0]["suscripcion_tarjeta_id"], suscripcion_id)
         self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-10-05")
 
+    def test_editar_monto_aplica_solo_a_periodos_futuros(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-07-05")
+        self.service.generar_cobros_pendientes(tarjeta_id, "2026-07-31")
+
+        resultado = self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "1500,00"})
+        self.assertEqual(resultado["periodo_desde"], "2026-08")
+        self.service.generar_cobros_pendientes(tarjeta_id, "2026-09-30")
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT periodo, monto_centavos FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? ORDER BY periodo",
+                (suscripcion_id,),
+            ).fetchall()
+            historial = conn.execute(
+                "SELECT monto_anterior_centavos, monto_nuevo_centavos, periodo_desde FROM tarjeta_suscripcion_historial_montos WHERE suscripcion_id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+            suscripcion = conn.execute(
+                "SELECT monto_centavos, fecha_inicio, fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual([(c["periodo"], c["monto_centavos"]) for c in cobros], [
+            ("2026-07", 100000),
+            ("2026-08", 150000),
+            ("2026-09", 150000),
+        ])
+        self.assertEqual(historial["monto_anterior_centavos"], 100000)
+        self.assertEqual(historial["monto_nuevo_centavos"], 150000)
+        self.assertEqual(historial["periodo_desde"], "2026-08")
+        self.assertEqual(suscripcion["monto_centavos"], 150000)
+        self.assertEqual(suscripcion["fecha_inicio"], "2026-07-05")
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-10-05")
+
+    def test_editar_monto_valida_importe_y_periodo(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-07-05")
+        self.service.generar_cobros_pendientes(tarjeta_id, "2026-07-31")
+
+        with self.assertRaises(self.service.TarjetasError):
+            self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "1000,00"})
+        with self.assertRaises(self.service.TarjetasError):
+            self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "0"})
+        with self.assertRaises(self.service.TarjetasError):
+            self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "1200,00", "periodo_desde": "2026-07"})
+
+    def test_pago_manual_anticipado_evitar_duplicado_automatico(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+
+        pago = self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+        self.assertEqual(pago["periodo"], "2026-08")
+        self.assertEqual(pago["monto_centavos"], 100000)
+        self.assertEqual(self.service.generar_cobros_pendientes(tarjeta_id, "2026-08-31"), [])
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT periodo, fecha_cobro, fecha_pago, origen, estado, movimiento_id FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?",
+                (suscripcion_id,),
+            ).fetchall()
+            movimientos = conn.execute(
+                "SELECT fecha, monto_centavos FROM movimientos WHERE suscripcion_tarjeta_id = ?",
+                (suscripcion_id,),
+            ).fetchall()
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual(len(cobros), 1)
+        self.assertEqual(cobros[0]["periodo"], "2026-08")
+        self.assertEqual(cobros[0]["fecha_cobro"], "2026-08-22")
+        self.assertEqual(cobros[0]["fecha_pago"], "2026-08-10")
+        self.assertEqual(cobros[0]["origen"], "manual")
+        self.assertEqual(cobros[0]["estado"], "pagado")
+        self.assertEqual(len(movimientos), 1)
+        self.assertEqual(movimientos[0]["fecha"], "2026-08-10")
+        self.assertEqual(movimientos[0]["monto_centavos"], -100000)
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-09-22")
+
+    def test_regulariza_periodos_vencidos_una_sola_vez(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+
+        movimientos = self.service.generar_cobros_pendientes(tarjeta_id, "2026-10-25")
+        self.assertEqual(len(movimientos), 3)
+        self.assertEqual(self.service.generar_cobros_pendientes(tarjeta_id, "2026-10-25"), [])
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT periodo, origen FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? ORDER BY periodo",
+                (suscripcion_id,),
+            ).fetchall()
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual([(c["periodo"], c["origen"]) for c in cobros], [
+            ("2026-08", "automatico"),
+            ("2026-09", "automatico"),
+            ("2026-10", "automatico"),
+        ])
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-11-22")
+
+    def test_relacion_monto_y_pago_anticipado(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+
+        pago_agosto = self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+        self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "1800,00"})
+        self.service.generar_cobros_pendientes(tarjeta_id, "2026-09-30")
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT periodo, monto_centavos FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? ORDER BY periodo",
+                (suscripcion_id,),
+            ).fetchall()
+
+        self.assertEqual(pago_agosto["monto_centavos"], 100000)
+        self.assertEqual([(c["periodo"], c["monto_centavos"]) for c in cobros], [
+            ("2026-08", 100000),
+            ("2026-09", 180000),
+        ])
+
+        tarjeta_id_2 = self._tarjeta()
+        suscripcion_id_2 = self._suscripcion(tarjeta_id_2, nombre="Spotify", fecha_inicio="2026-08-22")
+        self.service.editar_monto_suscripcion(suscripcion_id_2, {"nuevo_monto": "1800,00"})
+        pago_agosto_nuevo = self.service.pagar_suscripcion(suscripcion_id_2, "2026-08-10")
+        self.assertEqual(pago_agosto_nuevo["monto_centavos"], 180000)
+
+    def test_suscripcion_cancelada_no_permite_monto_ni_pago(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+        self.service.cambiar_estado_suscripcion(suscripcion_id, "cancelada", "2026-08-01")
+
+        with self.assertRaises(self.service.TarjetasError):
+            self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "1200,00"})
+        with self.assertRaises(self.service.TarjetasError):
+            self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+
+    def test_error_durante_cobro_no_deja_datos_parciales(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+        original = self.service.repo.registrar_cobro_suscripcion
+
+        def fallar(*args, **kwargs):
+            raise RuntimeError("fallo simulado")
+
+        self.service.repo.registrar_cobro_suscripcion = fallar
+        try:
+            with self.assertRaises(RuntimeError):
+                self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+        finally:
+            self.service.repo.registrar_cobro_suscripcion = original
+
+        with root_db.get_conn() as conn:
+            movimientos = conn.execute(
+                "SELECT COUNT(*) AS total FROM movimientos WHERE suscripcion_tarjeta_id = ?",
+                (suscripcion_id,),
+            ).fetchone()["total"]
+            cobros = conn.execute(
+                "SELECT COUNT(*) AS total FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?",
+                (suscripcion_id,),
+            ).fetchone()["total"]
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual(movimientos, 0)
+        self.assertEqual(cobros, 0)
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-08-22")
+
     def test_suscripcion_estados_controlan_cobros(self):
         tarjeta_id = self._tarjeta()
         suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-07-10")

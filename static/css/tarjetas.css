@@ -107,6 +107,37 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
+  align-items: end;
+}
+
+.subscription-action-detail {
+  width: 100%;
+}
+
+.subscription-action-detail summary {
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+
+.subscription-action-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.subscription-inline-form {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.compact-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.subscription-pay-form input {
+  max-width: 150px;
 }
 
 .section-band {
@@ -242,6 +273,7 @@
   }
 
   .pay-form input,
+  .subscription-pay-form input,
   .period-form input,
   .inline-form input {
     width: 100%;
