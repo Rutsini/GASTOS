@@ -1,0 +1,149 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Subcategorías</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background:#f9fafb; color:#333; }
+        .card { background:white; border:1px solid #eee; border-radius:10px; padding:14px; margin-bottom:14px; }
+        input, select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+        button, .btn { display:inline-block; padding:8px 12px; border:0; border-radius:8px; cursor:pointer; background:#eee; color:#111; text-decoration:none; font-size:14px; }
+        .primary { background:#004481; color:white; }
+        .danger { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+        .muted { color:#666; font-size:12px; }
+        .subcategory-admin-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px; }
+        .subcategory-card { display:flex; flex-direction:column; gap:12px; }
+        .subcategory-row { display:grid; grid-template-columns: 1fr 120px auto; gap:8px; align-items:center; }
+        .keyword-row { display:grid; grid-template-columns: 1fr 100px auto; gap:8px; align-items:center; margin-top:8px; }
+        .keyword-list { border-top:1px solid #eee; padding-top:10px; }
+        .badge { display:inline-block; background:#eef2ff; color:#3730a3; padding:4px 8px; border-radius:999px; margin:2px; font-size:12px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% if mensaje %}<div class="card">{{ mensaje }}</div>{% endif %}
+    <div class="card">
+        <form action="/subcategorias/autoasignar-pendientes" method="POST" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button class="primary" type="submit">Autoasignar pendientes</button>
+            <span class="muted">Aplica palabras clave activas solo a movimientos sin subcategoría o sin categoría.</span>
+        </form>
+    </div>
+    <div class="card form-card subcategory-create-card">
+        <h3>Nueva subcategoría</h3>
+        <form action="/subcategorias/crear" method="POST" class="form-grid">
+            <div class="form-group">
+                <label for="sub_nombre">Nombre</label>
+                <input id="sub_nombre" type="text" name="nombre" placeholder="Ej: Supermercado" required>
+            </div>
+            <div class="form-group">
+                <label for="sub_activa">Activa</label>
+                <select id="sub_activa" name="activa">
+                    <option value="1" selected>Sí</option>
+                    <option value="0">No</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="palabra_inicial">Palabra clave inicial</label>
+                <input id="palabra_inicial" type="text" name="palabra_clave_inicial" placeholder="Ej: Carrefour">
+            </div>
+            <div class="form-actions">
+                <button class="primary" type="submit">Crear</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card subcategory-admin-card">
+        <h3>Subcategorías existentes</h3>
+        <div class="table-responsive">
+            <table class="subcategory-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Activa</th>
+                        <th>Categorías asociadas</th>
+                        <th>Palabras clave</th>
+                        <th>Movimientos</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sub in subcategorias %}
+                    <tr>
+                        <td colspan="6">
+                            <form class="subcategory-edit-row" action="/subcategorias/{{ sub.id }}/editar" method="POST">
+                                <input type="hidden" name="actualizar_relaciones" value="0">
+                                <div>
+                                    <input class="subcategory-name-input" type="text" name="nombre" value="{{ sub.nombre }}" required>
+                                </div>
+                                <div>
+                                    <select class="subcategory-active-select" name="activa">
+                                        <option value="1" {% if sub.activa %}selected{% endif %}>Sí</option>
+                                        <option value="0" {% if not sub.activa %}selected{% endif %}>No</option>
+                                    </select>
+                                </div>
+                                <div class="subcategory-relations">
+                                    <div class="subcategory-badges">
+                                        {% for cat in sub.categorias %}
+                                        <span class="badge">{{ cat.nombre }}</span>
+                                        {% endfor %}
+                                        {% if not sub.categorias %}<span class="muted">Sin categorías asignadas</span>{% endif %}
+                                    </div>
+                                    <button class="btn btn-sm edit-subcategory-categories" type="button" data-subcategory-id="{{ sub.id }}" data-subcategory-name="{{ sub.nombre }}">Editar categorías</button>
+                                </div>
+                                <div class="subcategory-keywords">
+                                    {% for regla in sub.palabras_clave %}
+                                    <span class="keyword-chip {% if not regla.activa %}inactive{% endif %}">
+                                        {{ regla.palabra_clave }}
+                                        <button type="submit" formaction="/subcategorias/palabras/{{ regla.id }}/toggle" title="Activar/desactivar">{% if regla.activa %}Activa{% else %}Inactiva{% endif %}</button>
+                                        <button type="submit" formaction="/subcategorias/palabras/{{ regla.id }}/eliminar" title="Eliminar">×</button>
+                                    </span>
+                                    {% endfor %}
+                                    {% if not sub.palabras_clave %}<span class="muted">Sin palabras clave</span>{% endif %}
+                                    <div class="keyword-add-row">
+                                        <input type="text" name="nueva_palabra_clave" placeholder="Nueva palabra clave">
+                                        <button type="submit" formaction="/subcategorias/{{ sub.id }}/palabras/crear">Agregar</button>
+                                    </div>
+                                </div>
+                                <div><span class="badge neutral">{{ sub.movimientos_count }}</span></div>
+                                <div class="actions">
+                                    <button type="submit">Guardar</button>
+                                    <button class="danger" type="submit" formaction="/subcategorias/{{ sub.id }}/eliminar" onclick="return confirm('¿Eliminar subcategoría?')">Eliminar</button>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not subcategorias %}
+                    <tr><td colspan="6">Todavía no hay subcategorías.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card compact-card" id="subcategory-category-editor" hidden>
+        <h3 id="subcategory-category-title">Editar categorías</h3>
+        <form class="subcategory-checks" action="/subcategorias/editar" method="POST">
+            <input id="subcategory-category-id" type="hidden" name="id" value="">
+            <input id="subcategory-category-name" type="hidden" name="nombre" value="">
+            <input id="subcategory-category-active" type="hidden" name="activa" value="1">
+            <input type="hidden" name="actualizar_relaciones" value="1">
+            <div class="subcategory-checks-list">
+                {% for cat in categorias %}
+                <label class="subcategory-chip">
+                    <input type="checkbox" name="categoria_ids" value="{{ cat.id }}">
+                    {{ cat.nombre }}
+                </label>
+                {% endfor %}
+                {% if not categorias %}
+                <span class="muted">No hay categorías activas para asignar.</span>
+                {% endif %}
+            </div>
+            <button class="primary" type="submit">Guardar categorías</button>
+        </form>
+    </div>
+    <script id="subcategory-categories-data" type="application/json">{{ relaciones_json | tojson }}</script>
+    <script src="{{ url_for('static', filename='js/subcategorias.js') }}"></script>
+</body>
+</html>

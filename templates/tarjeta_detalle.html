@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tarjeta.nombre }}{% endblock %}
+{% block page_title %}{{ tarjeta.nombre }}{% endblock %}
+{% block page_subtitle %}{{ tarjeta.banco or 'Tarjeta' }}{% if tarjeta.tipo %} · {{ tarjeta.tipo }}{% endif %}{% if tarjeta.ultimos_cuatro %} · **** {{ tarjeta.ultimos_cuatro }}{% endif %}{% endblock %}
+{% block page_actions %}
+<a class="btn" href="/tarjetas">Volver</a>
+<a class="btn" href="/tarjetas/{{ tarjeta.id }}/editar">Editar</a>
+{% if tarjeta.activa_bool %}<a class="btn btn-primary" href="/tarjetas/{{ tarjeta.id }}/compras/nueva">Nueva compra</a>{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="summary-grid">
+    <div class="card metric-card"><span>Compras activas</span><strong>{{ tarjeta.compras_activas }}</strong></div>
+    <div class="card metric-card"><span>Cuotas pendientes</span><strong>{{ tarjeta.cuotas_pendientes }}</strong></div>
+    <div class="card metric-card"><span>A pagar este periodo</span><strong>{{ tarjeta.periodo_actual_fmt }}</strong></div>
+    <div class="card metric-card"><span>Total pendiente</span><strong>{{ tarjeta.pendiente_fmt }}</strong></div>
+    <div class="card metric-card"><span>Total pagado</span><strong>{{ tarjeta.pagado_fmt }}</strong></div>
+    <div class="card metric-card"><span>Proximo vencimiento</span><strong>{{ tarjeta.proximo_vencimiento_fmt or '-' }}</strong></div>
+    <div class="card metric-card"><span>Planes finalizados</span><strong>{{ tarjeta.planes_finalizados }}</strong></div>
+</div>
+
+<section class="section-band">
+    <div class="section-header">
+        <div>
+            <h2>Cuotas del periodo</h2>
+            <p class="muted">Cada cuota pagada genera su propio movimiento.</p>
+        </div>
+        <form method="get" action="/tarjetas/{{ tarjeta.id }}" class="period-form">
+            <input type="month" name="periodo" value="{{ periodo }}">
+            <button class="btn" type="submit">Ver periodo</button>
+        </form>
+    </div>
+    {% if periodo_resumen %}
+    <div class="period-summary">
+        <span>{{ periodo_resumen.cantidad }} cuotas pendientes</span>
+        <strong>{{ periodo_resumen.total_fmt }}</strong>
+        <form method="post" action="/tarjetas/{{ tarjeta.id }}/pagar-periodo" class="inline-form">
+            <input type="hidden" name="periodo" value="{{ periodo }}">
+            <input type="date" name="fecha_pago" value="{{ request.args.get('fecha_pago') or '' }}">
+            <button class="btn btn-primary" type="submit" data-confirm="Pagar todas las cuotas pendientes del periodo?">Pagar cuotas del periodo</button>
+        </form>
+    </div>
+    {% endif %}
+</section>
+
+<section class="section-band">
+    <div class="section-header">
+        <div>
+            <h2>Compras</h2>
+            <p class="muted">Planes activos, finalizados o cancelados.</p>
+        </div>
+        <form method="get" action="/tarjetas/{{ tarjeta.id }}" class="card-filter-form compact-filter">
+            <input type="hidden" name="periodo" value="{{ periodo }}">
+            <select name="estado">
+                <option value="" {% if not filtros.estado %}selected{% endif %}>Todos los estados</option>
+                <option value="activa" {% if filtros.estado == 'activa' %}selected{% endif %}>Activa</option>
+                <option value="finalizada" {% if filtros.estado == 'finalizada' %}selected{% endif %}>Finalizada</option>
+                <option value="cancelada" {% if filtros.estado == 'cancelada' %}selected{% endif %}>Cancelada</option>
+            </select>
+            <select name="categoria">
+                <option value="">Todas las categorias</option>
+                {% for categoria in categorias %}
+                <option value="{{ categoria }}" {% if filtros.categoria == categoria %}selected{% endif %}>{{ categoria }}</option>
+                {% endfor %}
+            </select>
+            <label class="check-inline"><input type="checkbox" name="pendientes" value="1" {% if filtros.pendientes == '1' %}checked{% endif %}> Pendientes</label>
+            <label class="check-inline"><input type="checkbox" name="pagadas" value="1" {% if filtros.pagadas == '1' %}checked{% endif %}> Pagadas</label>
+            <button class="btn" type="submit">Filtrar</button>
+        </form>
+    </div>
+
+    <div class="purchase-list">
+        {% for compra in compras %}
+        <article class="purchase-item">
+            <div class="purchase-main">
+                <div>
+                    <h3>{{ compra.descripcion }}</h3>
+                    <div class="muted">{{ compra.comercio or 'Sin comercio' }} · {{ compra.categoria or 'Sin categoria' }}</div>
+                </div>
+                <span class="status-pill status-{{ compra.estado }}">{{ compra.estado }}</span>
+            </div>
+            <div class="purchase-metrics">
+                <div><span>Monto original</span><strong>{{ compra.monto_original_fmt }}</strong></div>
+                <div><span>Valor cuota</span><strong>{{ compra.valor_cuota_fmt }}</strong></div>
+                <div><span>Cuota actual</span><strong>{{ compra.cuota_actual or '-' }} / {{ compra.cantidad_cuotas }}</strong></div>
+                <div><span>Pagadas</span><strong>{{ compra.cuotas_pagadas }}</strong></div>
+                <div><span>Pendientes</span><strong>{{ compra.cuotas_pendientes }}</strong></div>
+                <div><span>Proximo vencimiento</span><strong>{{ compra.proximo_vencimiento_fmt or '-' }}</strong></div>
+                <div><span>Total pendiente</span><strong>{{ compra.total_pendiente_fmt }}</strong></div>
+                <div><span>Total financiado</span><strong>{{ compra.total_financiado_fmt }}</strong></div>
+            </div>
+            {% if compra.diferencia_fmt != '$0,00' %}
+            <div class="finance-note">Diferencia/interes: <strong>{{ compra.diferencia_fmt }}</strong></div>
+            {% endif %}
+            {% if compra.cuotas_pendientes > 0 %}
+            <form method="post" action="/tarjetas/compras/{{ compra.id }}/pagar" class="pay-form">
+                <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                <input type="date" name="fecha_pago" value="">
+                <input type="text" name="importe" placeholder="Importe opcional">
+                <button class="btn btn-primary" type="submit" data-confirm="Pagar la primera cuota pendiente?">Pagar proxima cuota</button>
+            </form>
+            {% endif %}
+            <details class="installments-detail">
+                <summary>Ver cuotas</summary>
+                <div class="table-scroll">
+                    <table class="table installments-table">
+                        <thead>
+                            <tr>
+                                <th>Cuota</th>
+                                <th>Importe</th>
+                                <th>Vencimiento</th>
+                                <th>Estado</th>
+                                <th>Pago</th>
+                                <th>Movimiento</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cuota in cuotas_por_compra[compra.id] %}
+                            <tr>
+                                <td>{{ cuota.numero_cuota }} / {{ cuota.cantidad_total_cuotas }}</td>
+                                <td class="amount">{{ cuota.importe_fmt }}</td>
+                                <td>{{ cuota.fecha_vencimiento_fmt }}</td>
+                                <td><span class="status-pill status-{{ cuota.estado }}">{{ cuota.estado }}</span></td>
+                                <td>{{ cuota.fecha_pago_fmt or '-' }}</td>
+                                <td>{% if cuota.movimiento_id %}<a href="/movimientos?q={{ compra.descripcion }}">#{{ cuota.movimiento_id }}</a>{% else %}-{% endif %}</td>
+                                <td>
+                                    {% if cuota.estado == 'pendiente' %}
+                                    <form method="post" action="/tarjetas/cuotas/{{ cuota.id }}/pagar" class="table-action-form">
+                                        <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                                        <button class="btn btn-sm btn-primary" type="submit" data-confirm="Pagar esta cuota?">Pagar</button>
+                                    </form>
+                                    {% elif cuota.estado == 'pagada' %}
+                                    <form method="post" action="/tarjetas/cuotas/{{ cuota.id }}/anular" class="table-action-form">
+                                        <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                                        <input type="hidden" name="observaciones" value="Anulacion desde tarjeta">
+                                        <button class="btn btn-sm danger" type="submit" data-confirm="Anular este pago?">Anular</button>
+                                    </form>
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </article>
+        {% endfor %}
+        {% if not compras %}
+        <div class="empty-state">No hay compras para los filtros seleccionados.</div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="section-band">
+    <div class="section-header">
+        <div>
+            <h2>Historial</h2>
+            <p class="muted">Pagos y anulaciones conservados para trazabilidad.</p>
+        </div>
+    </div>
+    <div class="table-scroll">
+        <table class="table history-table">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Operacion</th>
+                    <th>Compra</th>
+                    <th>Cuota</th>
+                    <th>Importe</th>
+                    <th>Movimiento</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in historial %}
+                <tr>
+                    <td>{{ h.fecha_operacion_fmt }}</td>
+                    <td><span class="status-pill status-{{ h.tipo_operacion }}">{{ h.tipo_operacion }}</span></td>
+                    <td>{{ h.compra_descripcion }}</td>
+                    <td>{{ h.numero_cuota }} / {{ h.cantidad_total_cuotas }}</td>
+                    <td class="amount">{{ h.importe_fmt }}</td>
+                    <td>
+                        {% if h.movimiento_id %}
+                        <a href="/movimientos?q={{ h.movimiento_descripcion or h.compra_descripcion }}">#{{ h.movimiento_id }}</a>
+                        {% if not h.movimiento_activo %}<span class="muted">(anulado)</span>{% endif %}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not historial %}
+                <tr><td colspan="6" class="muted">Todavia no hay pagos registrados.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<script src="{{ url_for('static', filename='js/tarjetas.js') }}"></script>
+{% endblock %}

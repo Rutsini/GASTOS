@@ -1,0 +1,119 @@
+
+.card,
+body > table {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+.card {
+  padding: 18px !important;
+  margin-bottom: 18px !important;
+}
+
+.grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+
+.report-card-wide {
+  grid-column: 1 / -1;
+}
+
+.metric {
+  color: var(--text);
+  font-size: 26px !important;
+  line-height: 1.1;
+}
+
+.muted { color: var(--muted) !important; }
+
+.btn,
+button,
+a > button {
+  min-height: 38px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 14px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: var(--text) !important;
+  font-size: 14px !important;
+  font-weight: 750;
+  text-decoration: none !important;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease;
+}
+
+.btn:hover,
+button:hover,
+a > button:hover {
+  background: #f8fbff !important;
+  border-color: #b8c6d8 !important;
+}
+
+.btn:active,
+button:active,
+a > button:active { transform: translateY(1px); }
+
+.btn-primary,
+.primary,
+.btn.primary,
+button.primary,
+button[style*="#004481"],
+button[style*="#15803d"] {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: #fff !important;
+}
+
+.btn-primary:hover,
+.primary:hover,
+.btn.primary:hover,
+button.primary:hover { background: var(--primary-hover) !important; }
+
+.btn-secondary { background: #fff !important; color: var(--text) !important; }
+.btn-success { background: var(--success) !important; border-color: var(--success) !important; color: #fff !important; }
+
+.quick-filters-card {
+  padding: 14px !important;
+}
+
+.quick-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn-danger,
+.danger,
+button.danger,
+button[style*="#fee2e2"] {
+  background: var(--danger-bg) !important;
+  border-color: #f3b7b7 !important;
+  color: var(--danger) !important;
+}
+
+.btn-sm {
+  min-height: 32px;
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+}
+
+form { gap: 12px; }
+

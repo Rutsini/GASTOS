@@ -1,0 +1,67 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Agregar movimiento</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f9fafb; color:#333; }
+        .card { background:white; border:1px solid #eee; border-radius:10px; padding:14px; margin-bottom:14px; }
+        button, .btn { display:inline-block; padding:8px 12px; border:0; border-radius:8px; cursor:pointer; background:#eee; color:#111; text-decoration:none; font-size:14px; }
+        .primary { background:#004481; color:white; }
+        .error { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; padding:10px; border-radius:8px; margin-bottom:12px; }
+        input, select { box-sizing:border-box; width:100%; padding:9px 10px; border:1px solid #ddd; border-radius:8px; }
+        nav { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="card form-card form-card-narrow">
+        <h2>Nuevo movimiento</h2>
+        {% if errores %}
+        <div class="error">
+            {% for error in errores %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <form method="POST" action="/movimientos/agregar" class="form-grid">
+            <div class="form-group">
+                <label for="fecha">Fecha</label>
+                <input id="fecha" type="date" name="fecha" value="{{ form.fecha }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="descripcion">Descripción</label>
+                <input id="descripcion" type="text" name="descripcion" value="{{ form.descripcion }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="monto">Monto</label>
+                <input id="monto" type="text" name="monto" value="{{ form.monto }}" placeholder="-1500,00 o 250000" required>
+            </div>
+
+            <div class="form-group">
+                <label for="categoria">Categoría</label>
+                <input id="categoria" type="text" name="categoria" value="{{ form.categoria or 'Sin categoría' }}" readonly>
+            </div>
+
+            <div class="form-group">
+                <label for="subcategoria_id">Subcategoría</label>
+                <select id="subcategoria_id" name="subcategoria_id">
+                    <option value="">Sin subcategoría</option>
+                    {% for sub in subcategorias %}
+                    <option value="{{ sub.id }}" data-categoria="{{ sub.categoria }}" {% if sub.id|string == form.subcategoria_id %}selected{% endif %}>{{ sub.nombre }}{% if sub.categoria %} / {{ sub.categoria }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-actions">
+                <button class="btn btn-primary primary" type="submit">Guardar</button>
+            </div>
+        </form>
+    </div>
+    <script src="{{ url_for('static', filename='js/movimiento_manual.js') }}"></script>
+</body>
+</html>

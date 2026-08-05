@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Tarjetas{% endblock %}
+{% block page_title %}Tarjetas{% endblock %}
+{% block page_subtitle %}Administra tarjetas, compras en cuotas y pagos{% endblock %}
+{% block page_actions %}<a class="btn btn-primary" href="/tarjetas/nueva">Nueva tarjeta</a>{% endblock %}
+
+{% block content %}
+<div class="card">
+    <form method="get" action="/tarjetas" class="card-filter-form">
+        <div class="form-group">
+            <label for="q">Buscar</label>
+            <input id="q" type="text" name="q" value="{{ q }}" placeholder="Nombre, banco o tipo">
+        </div>
+        <div class="form-group">
+            <label for="estado">Estado</label>
+            <select id="estado" name="estado">
+                <option value="" {% if not estado %}selected{% endif %}>Todas</option>
+                <option value="activas" {% if estado == 'activas' %}selected{% endif %}>Activas</option>
+                <option value="inactivas" {% if estado == 'inactivas' %}selected{% endif %}>Inactivas</option>
+            </select>
+        </div>
+        <div class="form-actions inline-actions">
+            <button class="btn btn-primary" type="submit">Filtrar</button>
+            <a class="btn" href="/tarjetas">Limpiar</a>
+        </div>
+    </form>
+</div>
+
+<div class="credit-card-grid">
+    {% for tarjeta in tarjetas %}
+    <article class="credit-card-item">
+        <div class="credit-card-accent" style="background: {{ tarjeta.color or '#1565c0' }}"></div>
+        <div class="credit-card-header">
+            <div>
+                <h2>{{ tarjeta.nombre }}</h2>
+                <div class="muted">{{ tarjeta.banco or 'Sin banco' }}{% if tarjeta.tipo %} · {{ tarjeta.tipo }}{% endif %}{% if tarjeta.ultimos_cuatro %} · **** {{ tarjeta.ultimos_cuatro }}{% endif %}</div>
+            </div>
+            <span class="status-pill {{ 'status-active' if tarjeta.activa_bool else 'status-inactive' }}">{{ 'Activa' if tarjeta.activa_bool else 'Inactiva' }}</span>
+        </div>
+        {% if tarjeta.descripcion %}<p class="muted">{{ tarjeta.descripcion }}</p>{% endif %}
+        <div class="credit-card-metrics">
+            <div><span>Pendiente</span><strong>{{ tarjeta.pendiente_fmt }}</strong></div>
+            <div><span>Pagado</span><strong>{{ tarjeta.pagado_fmt }}</strong></div>
+            <div><span>Compras activas</span><strong>{{ tarjeta.compras_activas }}</strong></div>
+            <div><span>Proximo vencimiento</span><strong>{{ tarjeta.proximo_vencimiento_fmt or '-' }}</strong></div>
+        </div>
+        <div class="credit-card-actions">
+            <a class="btn btn-primary" href="/tarjetas/{{ tarjeta.id }}">Abrir</a>
+            <a class="btn" href="/tarjetas/{{ tarjeta.id }}/editar">Editar</a>
+            {% if tarjeta.activa_bool %}
+            <form method="post" action="/tarjetas/{{ tarjeta.id }}/desactivar">
+                <button type="submit" class="btn" data-confirm="Desactivar tarjeta?">Desactivar</button>
+            </form>
+            {% else %}
+            <form method="post" action="/tarjetas/{{ tarjeta.id }}/activar">
+                <button type="submit" class="btn">Activar</button>
+            </form>
+            {% endif %}
+            {% if tarjeta.compras_total == 0 %}
+            <form method="post" action="/tarjetas/{{ tarjeta.id }}/eliminar">
+                <button type="submit" class="btn danger" data-confirm="Eliminar tarjeta sin historial?">Eliminar</button>
+            </form>
+            {% endif %}
+        </div>
+    </article>
+    {% endfor %}
+    {% if not tarjetas %}
+    <div class="card empty-state">No hay tarjetas para los filtros seleccionados.</div>
+    {% endif %}
+</div>
+{% endblock %}

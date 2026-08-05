@@ -1,0 +1,106 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Presupuestos</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding:20px; background:#f9fafb; color:#333; }
+        nav, .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:end; }
+        button, .btn { display:inline-block; padding:8px 12px; border:0; border-radius:8px; cursor:pointer; background:#eee; color:#111; text-decoration:none; font-size:14px; }
+        .primary { background:#004481; color:white; }
+        .danger { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+        .card { background:white; border:1px solid #eee; border-radius:10px; padding:14px; margin-bottom:14px; }
+        table { border-collapse:collapse; width:100%; background:white; }
+        th, td { border-bottom:1px solid #e8e8e8; padding:10px; text-align:left; }
+        th { background:#f5f5f5; }
+        input, select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+        label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:#666; }
+        .ok { background:#f0fdf4; }
+        .warn { background:#fefce8; }
+        .over { background:#fef2f2; }
+        .ingreso { color:#15803d; font-weight:700; }
+        .egreso { color:#b91c1c; font-weight:700; }
+        .warn-text { color:#a16207; font-weight:700; }
+        .muted { color:#666; font-size:12px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% if mensaje %}<div class="card">{{ mensaje }}</div>{% endif %}
+
+    {% include "_quick_filters.html" %}
+
+    <div class="card compact-card">
+        <h3>Mes seleccionado</h3>
+        <form class="filters" method="get" action="/presupuestos">
+            <label>Mes<input type="month" name="mes" value="{{ mes }}"></label>
+            <button class="primary" type="submit">Ver mes</button>
+        </form>
+    </div>
+
+    <div class="card compact-card">
+        <h3>Nuevo presupuesto</h3>
+        <form action="/presupuestos/agregar" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+            <input type="hidden" name="mes" value="{{ mes }}">
+            <label>Categoría
+                <select name="categoria" required>
+                    {% for cat in categorias_gasto %}
+                    <option value="{{ cat }}">{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Monto límite
+                <input type="text" name="monto_limite" placeholder="150000,00" required>
+            </label>
+            <button class="primary" type="submit">Crear presupuesto</button>
+        </form>
+    </div>
+
+    <div class="card" style="padding:0;">
+        <h3 style="padding:14px 14px 0;">Presupuestos del mes</h3>
+        <div class="table-responsive">
+            <table class="table budget-table">
+                <thead>
+                    <tr>
+                        <th>Categoría</th>
+                        <th>Presupuesto</th>
+                        <th>Gastos</th>
+                        <th>Reintegros</th>
+                        <th>Gasto neto</th>
+                        <th>Disponible / excedido</th>
+                        <th>% consumido</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in presupuestos %}
+                    <tr class="{{ p.estado_clase }}">
+                        <td>{{ p.categoria }}</td>
+                        <td class="amount">{{ p.limite_fmt }}</td>
+                        <td class="amount-expense amount">{{ p.gastos_fmt }}</td>
+                        <td class="amount-income amount">{{ p.reintegros_fmt }}</td>
+                        <td class="{{ p.gasto_neto_class }} amount">{{ p.gasto_neto_fmt }}</td>
+                        <td class="{{ p.diferencia_clase }} amount">{{ p.diferencia_fmt }}</td>
+                        <td class="{{ p.porcentaje_clase }} amount">{{ p.porcentaje }}%</td>
+                        <td>
+                            <form action="/presupuestos/editar" method="POST" class="budget-actions">
+                                <input type="hidden" name="id" value="{{ p.id }}">
+                                <input type="hidden" name="mes" value="{{ mes }}">
+                                <input class="budget-limit-input" type="text" name="monto_limite" value="{{ p.limite_input }}" required>
+                                <button type="submit">Guardar</button>
+                                <button class="danger" type="submit" formaction="/presupuestos/eliminar" onclick="return confirm('¿Eliminar presupuesto?')">Eliminar</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                {% if not presupuestos %}
+                    <tr><td colspan="8" class="muted">No hay presupuestos para este mes.</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

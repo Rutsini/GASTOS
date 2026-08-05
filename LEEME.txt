@@ -1,0 +1,70 @@
+Gastos - Guia rapida para Windows
+=================================
+
+Como abrir la app
+-----------------
+1. Descomprimi la carpeta completa del proyecto.
+2. Hace doble click en Gastos.bat.
+3. La primera vez puede tardar unos minutos porque crea un entorno virtual local e instala dependencias.
+4. La app se abre automaticamente en el navegador en:
+
+   http://127.0.0.1:5000
+
+Importante
+----------
+- No cierres la ventana negra mientras estes usando la app.
+- Si la ventana muestra un error, dejala abierta para poder leer el mensaje.
+- Para cerrar la app, cerra la ventana negra o presiona Ctrl+C.
+
+Requisito
+---------
+Necesitas tener Python 3 instalado en Windows.
+
+Si no lo tenes:
+1. Descargalo desde https://www.python.org/downloads/
+2. Durante la instalacion, marca la opcion "Add python.exe to PATH".
+3. Volve a abrir Gastos.bat.
+
+Donde se guardan los datos
+--------------------------
+La base de datos se guarda en:
+
+  data\gastos.db
+
+Si existe una base vieja en la carpeta principal con el nombre gastos.db, la app la copia automaticamente a data\gastos.db la primera vez que arranca.
+
+Backups y exportaciones
+-----------------------
+Desde la pantalla Configuracion podes usar:
+
+- Descargar backup
+- Exportar datos completos
+
+Los archivos generados tambien quedan guardados en:
+
+  data\backups
+  data\exportaciones
+
+Actualizar desde una version anterior
+-------------------------------------
+Si ya usabas una version previa, lee ACTUALIZAR.txt antes de reemplazar archivos.
+La app no debe distribuirse con una base gastos.db real del desarrollador.
+Si copias una base vieja como gastos.db en la carpeta principal, la app la copia automaticamente a data\gastos.db si todavia no existe.
+
+Archivos importantes
+--------------------
+- Gastos.bat: acceso rapido recomendado.
+- iniciar_gastos.bat: script completo de inicio.
+- requirements.txt: dependencias de Python.
+- app.py: aplicacion Flask.
+- data\gastos.db: base SQLite principal.
+
+Uso alternativo
+---------------
+Si preferis abrir la app desde consola:
+
+  python app.py
+
+Despues entra en el navegador a:
+
+  http://127.0.0.1:5000

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Nueva compra en cuotas{% endblock %}
+{% block page_title %}Nueva compra en cuotas{% endblock %}
+{% block page_subtitle %}Carga el plan; el gasto se crea recien al pagar cada cuota{% endblock %}
+
+{% block content %}
+<div class="card form-card">
+    <form method="post" class="form-grid tarjeta-compra-form">
+        <div class="form-group">
+            <label for="descripcion">Descripcion</label>
+            <input id="descripcion" type="text" name="descripcion" value="{{ form.descripcion|default('', true) }}" required>
+        </div>
+        <div class="form-group">
+            <label for="comercio">Comercio</label>
+            <input id="comercio" type="text" name="comercio" value="{{ form.comercio|default('', true) }}">
+        </div>
+        <div class="form-group">
+            <label for="monto_original">Monto original</label>
+            <input id="monto_original" class="js-card-amount" type="text" name="monto_original" value="{{ form.monto_original|default('', true) }}" placeholder="600000,00" required>
+        </div>
+        <div class="form-group">
+            <label for="cantidad_cuotas">Cantidad de cuotas</label>
+            <input id="cantidad_cuotas" class="js-card-installments" type="number" min="1" name="cantidad_cuotas" value="{{ form.cantidad_cuotas|default('1', true) }}" required>
+        </div>
+        <div class="form-group">
+            <label for="valor_cuota">Valor real de cuota</label>
+            <input id="valor_cuota" class="js-card-installment-value" type="text" name="valor_cuota" value="{{ form.valor_cuota|default('', true) }}" placeholder="Opcional">
+        </div>
+        <div class="form-group">
+            <label>Resumen financiero</label>
+            <div class="finance-preview">
+                <span>Cuota estimada: <strong data-card-preview="cuota">-</strong></span>
+                <span>Total financiado: <strong data-card-preview="total">-</strong></span>
+                <span>Diferencia/interes: <strong data-card-preview="diferencia">-</strong></span>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="fecha_compra">Fecha de compra</label>
+            <input id="fecha_compra" type="date" name="fecha_compra" value="{{ form.fecha_compra|default('', true) }}" required>
+        </div>
+        <div class="form-group">
+            <label for="fecha_inicio">Fecha de inicio</label>
+            <input id="fecha_inicio" type="date" name="fecha_inicio" value="{{ form.fecha_inicio|default('', true) }}" required>
+        </div>
+        <div class="form-group">
+            <label for="primer_vencimiento">Primer vencimiento</label>
+            <input id="primer_vencimiento" type="date" name="primer_vencimiento" value="{{ form.primer_vencimiento|default('', true) }}" required>
+        </div>
+        <div class="form-group">
+            <label for="categoria">Categoria</label>
+            <select id="categoria" name="categoria" class="js-card-category" required>
+                <option value="">Seleccionar</option>
+                {% for categoria in categorias %}
+                <option value="{{ categoria }}" {% if form.categoria == categoria %}selected{% endif %}>{{ categoria }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="subcategoria_id">Subcategoria</label>
+            <select id="subcategoria_id" name="subcategoria_id" class="js-card-subcategory">
+                <option value="">Sin subcategoria</option>
+                {% for sub in subcategorias %}
+                <option value="{{ sub.id }}" data-categoria="{{ sub.categoria or '' }}" {% if form.subcategoria_id|string == sub.id|string %}selected{% endif %}>{{ sub.nombre }}{% if sub.categoria %} / {{ sub.categoria }}{% endif %}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group full-row">
+            <label for="observaciones">Observaciones</label>
+            <textarea id="observaciones" name="observaciones" rows="3">{{ form.observaciones|default('', true) }}</textarea>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">Crear compra y cuotas</button>
+            <a class="btn" href="/tarjetas/{{ tarjeta_id }}">Cancelar</a>
+        </div>
+    </form>
+</div>
+<script src="{{ url_for('static', filename='js/tarjetas.js') }}"></script>
+{% endblock %}

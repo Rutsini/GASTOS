@@ -1,0 +1,123 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Categorías</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background:#f9fafb; color:#333; }
+        .card { background:white; border:1px solid #eee; border-radius:10px; padding:14px; margin-bottom:14px; }
+        table { border-collapse: collapse; width:100%; background:white; }
+        th, td { border-bottom:1px solid #e8e8e8; padding:10px; text-align:left; }
+        input, select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+        button, .btn { display:inline-block; padding:8px 12px; border:0; border-radius:8px; cursor:pointer; background:#eee; color:#111; text-decoration:none; font-size:14px; }
+        .primary { background:#004481; color:white; }
+        .danger { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+        .muted { color:#666; font-size:12px; }
+        nav { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% if mensaje %}<div class="card">{{ mensaje }}</div>{% endif %}
+    <div class="card compact-card">
+        <h3>Nueva categoría</h3>
+        <form action="/categorias/agregar" method="POST" style="display:flex; gap:8px; flex-wrap:wrap;">
+            <input type="text" name="nueva_cat_nombre" placeholder="Nombre" required>
+            <select name="tipo">
+                {% for value, label in tipos.items() %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button class="primary" type="submit">Agregar</button>
+        </form>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+        <h3 style="padding:14px 14px 0;">Categorías existentes</h3>
+        <div class="category-admin-list">
+            {% for cat in categorias %}
+            <section class="category-admin-card">
+                <div class="category-admin-main">
+                    <div>
+                        <form id="cat-edit-{{ cat.id }}" action="/categorias/editar" method="POST"></form>
+                        <input form="cat-edit-{{ cat.id }}" type="hidden" name="id" value="{{ cat.id }}">
+                        <label class="muted">Nombre</label>
+                        <input form="cat-edit-{{ cat.id }}" type="text" name="nombre" value="{{ cat.nombre }}" required>
+                    </div>
+                    <div>
+                        <label class="muted">Tipo</label>
+                        <select form="cat-edit-{{ cat.id }}" name="tipo">
+                            {% for value, label in tipos.items() %}
+                            <option value="{{ value }}" {% if cat.tipo == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="muted">Activa</label>
+                        <select form="cat-edit-{{ cat.id }}" name="activa">
+                            <option value="1" {% if cat.activa %}selected{% endif %}>Sí</option>
+                            <option value="0" {% if not cat.activa %}selected{% endif %}>No</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="muted">Movimientos</label>
+                        <span class="badge">{{ cat.movimientos }}</span>
+                    </div>
+                    <div class="category-admin-actions">
+                        <button form="cat-edit-{{ cat.id }}" type="submit">Guardar</button>
+                        {% if cat.movimientos == 0 %}
+                        <form action="/categorias/eliminar" method="POST">
+                            <input type="hidden" name="id" value="{{ cat.id }}">
+                            <button class="danger" type="submit" onclick="return confirm('¿Eliminar categoría?')">Eliminar</button>
+                        </form>
+                        {% elif cat.activa %}
+                        <form action="/categorias/desactivar" method="POST">
+                            <input type="hidden" name="id" value="{{ cat.id }}">
+                            <button type="submit" onclick="return confirm('Esta categoría tiene movimientos. ¿Desactivarla?')">Desactivar</button>
+                        </form>
+                        {% else %}
+                        <span class="muted">No eliminable</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="subcategory-block">
+                    <div class="subcategory-title">Subcategorías asignadas</div>
+                    <div class="subcategory-badges">
+                        {% for sub in cat.subcategorias %}
+                        <span class="badge {% if not sub.activa %}neutral{% endif %}">{{ sub.nombre }}{% if not sub.activa %} (inactiva){% endif %}</span>
+                        {% endfor %}
+                        {% if not cat.subcategorias %}
+                        <span class="muted">Sin subcategorías asignadas</span>
+                        {% endif %}
+                    </div>
+                    <button class="btn edit-category-subcategories" type="button" data-category-id="{{ cat.id }}" data-category-name="{{ cat.nombre }}">Editar subcategorías</button>
+                </div>
+            </section>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card compact-card" id="category-subcategory-editor" hidden>
+        <h3 id="category-subcategory-title">Editar subcategorías</h3>
+        <form class="subcategory-checks" action="/categorias/subcategorias" method="POST">
+            <input id="category-subcategory-id" type="hidden" name="categoria_id" value="">
+            <div class="subcategory-checks-list">
+                {% for sub in subcategorias %}
+                <label class="subcategory-chip">
+                    <input type="checkbox" name="subcategoria_ids" value="{{ sub.id }}">
+                    {{ sub.nombre }}
+                    {% if not sub.activa %}<span class="muted">(inactiva)</span>{% endif %}
+                </label>
+                {% endfor %}
+                {% if not subcategorias %}
+                <div class="muted">Primero creá subcategorías desde Administración &gt; Subcategorías.</div>
+                {% endif %}
+            </div>
+            <button class="primary" type="submit">Guardar asignaciones</button>
+        </form>
+    </div>
+    <script id="category-subcategories-data" type="application/json">{{ asignaciones_json | tojson }}</script>
+    <script src="{{ url_for('static', filename='js/categorias.js') }}"></script>
+</body>
+</html>

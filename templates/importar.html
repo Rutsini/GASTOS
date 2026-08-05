@@ -1,0 +1,53 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CUENTAS</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+        .card { border: 1px solid #eee; border-radius: 10px; padding: 14px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        th, td { border-bottom: 1px solid #e8e8e8; padding: 10px; text-align: left; }
+        th { background: #f5f5f5; }
+        .ingreso { color: #15803d; font-weight: 700; }
+        .egreso { color: #b91c1c; font-weight: 700; }
+        .total { margin-top: 16px; font-size: 18px; font-weight: 800; }
+        .muted { color: #666; font-size: 12px; }
+        button { padding: 8px 12px; border: 0; border-radius: 8px; cursor: pointer; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="import-grid">
+        <div class="card">
+            <h3>Importar CSV genérico</h3>
+            <p class="muted">Cargá un archivo CSV con movimientos normalizados.</p>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="csvfile" accept=".csv,text/csv" />
+                <div style="margin-top:12px;">
+                    <button type="submit" name="tipo_carga" value="csv" style="background: #004481; color: white;">Cargar CSV</button>
+                </div>
+            </form>
+        </div>
+        <div class="card">
+            <h3>Importar CSV BBVA</h3>
+            <p class="muted">Usá esta opción para extractos descargados desde BBVA.</p>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="bbvafile" accept=".csv" />
+                <div style="margin-top:12px;">
+                    <button type="submit" name="tipo_carga" value="bbva" style="background: #004481; color: white;">Cargar CSV BBVA</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% if filename %}
+    <div class="card">
+        <div class="muted">Archivo: <b>{{ filename }}</b></div>
+        <div>Insertadas: <b>{{ insertadas }}</b> | Duplicadas ignoradas: <b>{{ ignoradas }}</b></div>
+        <div class="total">TOTAL EN ESTE ARCHIVO: {{ total_fmt }}</div>
+    </div>
+    {% endif %}
+</body>
+</html>

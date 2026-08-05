@@ -1,0 +1,243 @@
+.card-filter-form,
+.compact-filter,
+.period-form,
+.inline-form,
+.pay-form,
+.table-action-form {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.card-filter-form .form-group {
+  min-width: 200px;
+}
+
+.inline-actions {
+  grid-column: auto;
+  margin-top: 0;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+.credit-card-grid,
+.purchase-list {
+  display: grid;
+  gap: 14px;
+}
+
+.credit-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.credit-card-item,
+.purchase-item {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.credit-card-accent {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 7px;
+}
+
+.credit-card-header,
+.purchase-main,
+.section-header,
+.period-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.credit-card-header h2,
+.purchase-main h3,
+.section-header h2 {
+  margin: 0;
+}
+
+.credit-card-metrics,
+.purchase-metrics,
+.summary-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.credit-card-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.purchase-metrics,
+.summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.credit-card-metrics div,
+.purchase-metrics div,
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.credit-card-metrics span,
+.purchase-metrics span,
+.metric-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.credit-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.section-band {
+  margin-top: 22px;
+}
+
+.period-summary {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.finance-preview,
+.finance-note {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.finance-note {
+  margin-top: 10px;
+  display: block;
+}
+
+.pay-form {
+  margin-top: 12px;
+}
+
+.pay-form input {
+  max-width: 180px;
+}
+
+.installments-detail {
+  margin-top: 14px;
+}
+
+.installments-detail summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 850;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  margin-top: 12px;
+}
+
+.installments-table,
+.history-table {
+  min-width: 760px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: capitalize;
+  background: #eef2f7;
+  color: #334155;
+}
+
+.status-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.status-active,
+.status-activa,
+.status-pagada,
+.status-pago {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.status-inactive,
+.status-inactiva,
+.status-finalizada {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.status-pendiente {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.status-anulada,
+.status-anulacion,
+.status-cancelada {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.empty-state {
+  color: var(--muted);
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.check-inline {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 40px;
+}
+
+.check-inline input {
+  min-height: auto;
+}
+
+@media (max-width: 760px) {
+  .credit-card-metrics,
+  .purchase-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .pay-form input,
+  .period-form input,
+  .inline-form input {
+    width: 100%;
+    max-width: none;
+  }
+}

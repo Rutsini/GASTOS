@@ -1,0 +1,10 @@
+{% if quick_filters %}
+<div class="card quick-filters-card">
+    <div class="quick-filters">
+        <b>Filtros rápidos</b>
+        {% for item in quick_filters.buttons %}
+        <a class="btn {% if item.active %}btn-primary active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

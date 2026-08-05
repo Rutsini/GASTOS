@@ -1,0 +1,90 @@
+Actualizar Gastos desde una version anterior
+============================================
+
+Objetivo
+--------
+Actualizar la app sin perder tu base gastos.db.
+
+Antes de empezar
+----------------
+1. Hace una copia completa de la carpeta vieja por seguridad.
+2. No borres la carpeta vieja hasta verificar que la nueva version funciona.
+3. Cerra la app si esta abierta.
+
+Caso recomendado
+----------------
+1. Descomprimi la nueva version en una carpeta nueva.
+2. Copia tu base anterior a una de estas ubicaciones de la carpeta nueva:
+
+   data\gastos.db
+
+   o, si venis de una version vieja:
+
+   gastos.db
+
+3. Hace doble click en Gastos.bat.
+4. La app va a:
+   - usar data\gastos.db como base principal
+   - copiar gastos.db de la raiz a data\gastos.db si hace falta
+   - crear un backup automatico antes de migrar
+   - crear tablas, columnas e indices faltantes sin borrar movimientos
+   - mostrar en consola "Base lista"
+
+Backups automaticos
+-------------------
+Antes de aplicar migraciones, la app crea un backup en:
+
+  data\backups\gastos_backup_YYYYMMDD_HHMMSS.db
+
+Conserva ese archivo.
+
+Que NO hacer
+------------
+- No reemplaces tu gastos.db por una base vacia.
+- No borres data\gastos.db si ya tiene tus movimientos.
+- No borres la carpeta vieja hasta probar la nueva.
+- No copies .venv ni __pycache__ entre versiones.
+
+Como verificar
+--------------
+1. Abri Gastos.bat.
+2. Espera a que se abra el navegador.
+3. Entra a Movimientos.
+4. Verifica que tus movimientos siguen ahi.
+5. Revisa Categorias, Reportes y Presupuestos.
+
+Si algo falla
+-------------
+1. No cierres la ventana negra inmediatamente.
+2. Lee el mensaje de error.
+3. Tu backup automatico queda en data\backups.
+4. Tambien podes volver a la carpeta vieja que copiaste al inicio.
+
+Preparar ZIP para enviar
+------------------------
+Incluir:
+- app.py
+- db.py
+- csv_reader.py
+- db_writer.py
+- bbva_csv_reader.py
+- bbva_excel_reader.py
+- date_utils.py
+- templates\
+- static\
+- requirements.txt
+- Gastos.bat
+- iniciar_gastos.bat
+- iniciar_app.bat
+- LEEME.txt
+- ACTUALIZAR.txt
+
+No incluir:
+- data\gastos.db
+- gastos.db
+- data\backups\
+- data\exportaciones\
+- data\uploads\
+- .venv\
+- __pycache__\
+- archivos temporales

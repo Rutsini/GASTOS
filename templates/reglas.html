@@ -1,0 +1,86 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Reglas</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding:20px; background:#f9fafb; color:#333; }
+        .card { background:white; border:1px solid #eee; border-radius:10px; padding:14px; margin-bottom:14px; }
+        table { border-collapse:collapse; width:100%; background:white; }
+        th, td { border-bottom:1px solid #e8e8e8; padding:10px; text-align:left; }
+        input, select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; }
+        button, .btn { display:inline-block; padding:8px 12px; border:0; border-radius:8px; cursor:pointer; background:#eee; color:#111; text-decoration:none; font-size:14px; }
+        .primary { background:#004481; color:white; }
+        .danger { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+        nav { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% if mensaje %}<div class="card">{{ mensaje }}</div>{% endif %}
+    <div class="card rules-form-card">
+        <h3>Nueva regla</h3>
+        <form action="/reglas/agregar" method="POST" class="form-grid rules-form-grid">
+            <div class="form-group">
+                <label for="palabra_clave">Palabra clave</label>
+                <input id="palabra_clave" class="keyword-input" type="text" name="palabra_clave" placeholder="Ej: carrefour" required>
+            </div>
+            <div class="form-group">
+                <label for="subcategoria_id">Subcategoría</label>
+                <select id="subcategoria_id" class="subcategory-select" name="subcategoria_id" required>
+                    <option value="" disabled selected>Seleccionar subcategoría</option>
+                {% for sub in subcategorias %}
+                    <option value="{{ sub.id }}">{{ sub.nombre }} — {{ sub.categoria or 'Sin categoría' }}</option>
+                {% endfor %}
+                </select>
+                {% if not subcategorias %}<span class="muted">No hay subcategorías activas todavía.</span>{% endif %}
+            </div>
+            <div class="form-actions rules-actions-left">
+                <button class="primary" type="submit" {% if not subcategorias %}disabled{% endif %}>Agregar regla</button>
+            </div>
+        </form>
+    </div>
+    <div class="card compact-card">
+        <h3>Recategorización</h3>
+        <form action="/reglas/recategorizar" method="POST">
+            <button class="primary" type="submit">Recategorizar movimientos</button>
+        </form>
+    </div>
+    <div class="card rules-card">
+        <h3 style="padding:14px 14px 0;">Reglas existentes</h3>
+        <div class="table-responsive">
+        <table class="rules-table">
+            <thead><tr><th>Palabra clave</th><th>Subcategoría</th><th>Activa</th><th>Acciones</th></tr></thead>
+            <tbody>
+            {% for regla in reglas %}
+                <tr>
+                    <td colspan="4">
+                        <form action="/reglas/editar" method="POST" class="rules-row-form">
+                            <input type="hidden" name="id" value="{{ regla.id }}">
+                            <input class="keyword-input" type="text" name="palabra_clave" value="{{ regla.palabra_clave }}" required>
+                            <select class="subcategory-select" name="subcategoria_id">
+                                <option value="" {% if not regla.subcategoria_id %}selected{% endif %}>Sin subcategoría{% if regla.categoria %} — {{ regla.categoria }}{% endif %}</option>
+                                {% for sub in subcategorias %}
+                                <option value="{{ sub.id }}" {% if sub.id == regla.subcategoria_id %}selected{% endif %}>{{ sub.nombre }} — {{ sub.categoria or 'Sin categoría' }}</option>
+                                {% endfor %}
+                            </select>
+                            <select class="active-select" name="activa">
+                                <option value="1" {% if regla.activa %}selected{% endif %}>Sí</option>
+                                <option value="0" {% if not regla.activa %}selected{% endif %}>No</option>
+                            </select>
+                            <span class="actions">
+                                <button type="submit">Guardar</button>
+                                <button class="danger" type="submit" formaction="/reglas/eliminar" onclick="return confirm('¿Eliminar regla?')">Eliminar</button>
+                            </span>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</body>
+</html>

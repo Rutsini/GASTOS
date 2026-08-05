@@ -1,0 +1,79 @@
+.chart-fallback {
+  min-height: 220px;
+  color: var(--text);
+}
+
+.chart-fallback-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-fallback-row:last-child {
+  border-bottom: 0;
+}
+
+.chart-fallback-row.compact {
+  grid-template-columns: minmax(120px, 1fr) auto;
+}
+
+.chart-fallback-label {
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.chart-fallback-bars {
+  display: grid;
+  gap: 6px;
+}
+
+.chart-bar {
+  display: block;
+  min-width: max-content;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.chart-bar.income {
+  background: #16a34a;
+}
+
+.chart-bar.expense {
+  background: #dc2626;
+}
+
+.chart-bar.savings {
+  background: #6366f1;
+}
+
+.chart-fallback-legend {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.chart-fallback-meter {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eef2f7;
+}
+
+.chart-fallback-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}

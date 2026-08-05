@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ page_title or app_nombre }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand"><span class="brand-mark">$</span><span>{{ app_nombre }}</span></div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Principal</div>
+                <a class="sidebar-link {% if request.path == '/' %}active{% endif %}" href="/">Dashboard</a>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Movimientos</div>
+                <a class="sidebar-link {% if request.path == '/movimientos' %}active{% endif %}" href="/movimientos">Movimientos</a>
+                <a class="sidebar-link {% if request.path == '/movimientos/agregar' %}active{% endif %}" href="/movimientos/agregar">Agregar movimiento</a>
+                <a class="sidebar-link {% if request.path == '/importar' %}active{% endif %}" href="/importar">Importar CSV</a>
+                <a class="sidebar-link {% if request.path == '/resumenes' %}active{% endif %}" href="/resumenes">Resumen mensual</a>
+                <a class="sidebar-link {% if request.path.startswith('/tarjetas') %}active{% endif %}" href="/tarjetas">Tarjetas</a>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Análisis</div>
+                <a class="sidebar-link {% if request.path == '/reportes' %}active{% endif %}" href="/reportes">Reportes</a>
+                <a class="sidebar-link {% if request.path == '/presupuestos' %}active{% endif %}" href="/presupuestos">Presupuestos</a>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Administración</div>
+                <a class="sidebar-link {% if request.path == '/categorias' %}active{% endif %}" href="/categorias">Categorías</a>
+                <a class="sidebar-link {% if request.path == '/subcategorias' %}active{% endif %}" href="/subcategorias">Subcategorías</a>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Sistema</div>
+                <a class="sidebar-link {% if request.path == '/configuracion' %}active{% endif %}" href="/configuracion">Configuración</a>
+            </div>
+        </aside>
+        <main class="main-area">
+            <header class="topbar">
+                <div>
+                    <h1 class="page-title">{% block page_title %}{{ page_title or '' }}{% endblock %}</h1>
+                    <div class="page-subtitle">{% block page_subtitle %}{{ page_subtitle or '' }}{% endblock %}</div>
+                </div>
+                <div class="page-actions">
+                    <button id="toggle-amounts" class="btn amount-visibility-toggle" type="button" aria-pressed="false">
+                        <span class="amount-visibility-icon" aria-hidden="true">$</span>
+                        <span class="amount-visibility-label">Ocultar montos</span>
+                    </button>
+                    {% block page_actions %}{% if action_url and action_label %}<a class="btn btn-primary" href="{{ action_url }}">{{ action_label }}</a>{% endif %}{% endblock %}
+                </div>
+            </header>
+            {% for msg in mensajes %}
+            <div class="flash">{{ msg }}</div>
+            {% endfor %}
+            <section class="page-content">
+                {% block content %}{% if rendered_content is defined %}{{ rendered_content }}{% endif %}{% endblock %}
+            </section>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% set editando = tarjeta is not none %}
+{% block title %}{{ 'Editar tarjeta' if editando else 'Nueva tarjeta' }}{% endblock %}
+{% block page_title %}{{ 'Editar tarjeta' if editando else 'Nueva tarjeta' }}{% endblock %}
+{% block page_subtitle %}Datos generales de la tarjeta{% endblock %}
+
+{% block content %}
+<div class="card form-card">
+    <form method="post" class="form-grid">
+        <div class="form-group">
+            <label for="nombre">Nombre o alias</label>
+            <input id="nombre" type="text" name="nombre" value="{{ form.nombre|default('', true) }}" required>
+        </div>
+        <div class="form-group">
+            <label for="banco">Banco o entidad</label>
+            <input id="banco" type="text" name="banco" value="{{ form.banco|default('', true) }}">
+        </div>
+        <div class="form-group">
+            <label for="tipo">Tipo</label>
+            <input id="tipo" type="text" name="tipo" value="{{ form.tipo|default('', true) }}" placeholder="Visa, Mastercard, Amex">
+        </div>
+        <div class="form-group">
+            <label for="ultimos_cuatro">Ultimos cuatro numeros</label>
+            <input id="ultimos_cuatro" type="text" name="ultimos_cuatro" maxlength="4" pattern="[0-9]{4}" value="{{ form.ultimos_cuatro|default('', true) }}">
+        </div>
+        <div class="form-group">
+            <label for="color">Color</label>
+            <input id="color" type="color" name="color" value="{{ form.color|default('#1565c0', true) }}">
+        </div>
+        <div class="form-group">
+            <label for="activa">Estado</label>
+            <select id="activa" name="activa">
+                <option value="1" {% if form.activa is not defined or form.activa|string != '0' %}selected{% endif %}>Activa</option>
+                <option value="0" {% if form.activa is defined and form.activa|string == '0' %}selected{% endif %}>Inactiva</option>
+            </select>
+        </div>
+        <div class="form-group full-row">
+            <label for="descripcion">Descripcion</label>
+            <textarea id="descripcion" name="descripcion" rows="3">{{ form.descripcion|default('', true) }}</textarea>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="submit">{{ 'Guardar cambios' if editando else 'Crear tarjeta' }}</button>
+            <a class="btn" href="{{ '/tarjetas/' ~ tarjeta.id if editando else '/tarjetas' }}">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
