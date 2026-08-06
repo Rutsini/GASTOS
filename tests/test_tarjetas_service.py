@@ -46,15 +46,24 @@ class TarjetasServiceTest(unittest.TestCase):
             "activa": "1",
         })
 
-    def _compra(self, tarjeta_id, cuotas="3", monto="100,00"):
+    def _compra(
+        self,
+        tarjeta_id,
+        cuotas="3",
+        monto="100,00",
+        descripcion="Celular",
+        fecha_compra="2026-07-01",
+        fecha_inicio="2026-07-01",
+        primer_vencimiento="2026-07-10",
+    ):
         return self.service.crear_compra_en_cuotas(tarjeta_id, {
-            "descripcion": "Celular",
+            "descripcion": descripcion,
             "comercio": "Tienda",
             "monto_original": monto,
             "cantidad_cuotas": cuotas,
-            "fecha_compra": "2026-07-01",
-            "fecha_inicio": "2026-07-01",
-            "primer_vencimiento": "2026-07-10",
+            "fecha_compra": fecha_compra,
+            "fecha_inicio": fecha_inicio,
+            "primer_vencimiento": primer_vencimiento,
             "categoria": "Electronica",
             "subcategoria_id": str(self.subcategoria_id),
         })
@@ -80,6 +89,126 @@ class TarjetasServiceTest(unittest.TestCase):
             ).fetchall()
 
         self.assertEqual([c["importe_centavos"] for c in cuotas], [3333, 3333, 3334])
+
+    def test_resumen_tarjeta_simplificado_cuenta_compras_y_total_financiado_activo(self):
+        tarjeta_id = self._tarjeta()
+        self._compra(tarjeta_id, cuotas="3", monto="100,00", descripcion="Compra activa 1")
+        self._compra(tarjeta_id, cuotas="2", monto="200,00", descripcion="Compra activa 2")
+        finalizada_id = self._compra(tarjeta_id, cuotas="1", monto="500,00", descripcion="Compra finalizada")
+        with root_db.get_conn() as conn:
+            conn.execute(
+                "UPDATE cuotas_tarjeta SET estado = 'pagada', fecha_pago = '2026-07-15' WHERE compra_tarjeta_id = ?",
+                (finalizada_id,),
+            )
+            conn.execute("UPDATE compras_tarjeta SET estado = 'finalizada' WHERE id = ?", (finalizada_id,))
+            conn.commit()
+
+        tarjeta = self.service.obtener_detalle_tarjeta(tarjeta_id)["tarjeta"]
+
+        self.assertEqual(tarjeta["compras_activas"], 2)
+        self.assertEqual(tarjeta["monto_total_tarjeta_centavos"], 30000)
+        self.assertEqual(tarjeta["monto_total_tarjeta_fmt"], "$300,00")
+        self.assertEqual(tarjeta["pendiente_centavos"], 30000)
+
+    def test_total_periodo_suma_cuotas_y_suscripciones_sin_duplicar(self):
+        tarjeta_id = self._tarjeta()
+        compra_pagada_id = self._compra(
+            tarjeta_id,
+            cuotas="2",
+            monto="200,00",
+            descripcion="Compra con cuota pagada",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-10",
+        )
+        compra_pendiente_id = self._compra(
+            tarjeta_id,
+            cuotas="1",
+            monto="300,00",
+            descripcion="Compra pendiente",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-15",
+        )
+        compra_cancelada_id = self._compra(
+            tarjeta_id,
+            cuotas="1",
+            monto="999,00",
+            descripcion="Compra cancelada",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-20",
+        )
+        with root_db.get_conn() as conn:
+            cuota_pagada_id = conn.execute(
+                "SELECT id FROM cuotas_tarjeta WHERE compra_tarjeta_id = ? AND numero_cuota = 1",
+                (compra_pagada_id,),
+            ).fetchone()["id"]
+            conn.execute("UPDATE compras_tarjeta SET estado = 'cancelada' WHERE id = ?", (compra_cancelada_id,))
+            conn.commit()
+        self.service.pagar_cuota(cuota_id=cuota_pagada_id, fecha_pago="2026-12-11")
+
+        suscripcion_pagada_id = self._suscripcion(tarjeta_id, nombre="Streaming pagado", monto="25,00", fecha_inicio="2026-12-05")
+        self.service.pagar_suscripcion(suscripcion_pagada_id, fecha_pago="2026-12-06")
+        self._suscripcion(tarjeta_id, nombre="Streaming pendiente", monto="30,00", fecha_inicio="2026-12-08")
+        suscripcion_modificada_id = self._suscripcion(tarjeta_id, nombre="Streaming modificado", monto="40,00", fecha_inicio="2026-11-05")
+        self.service.editar_monto_suscripcion(
+            suscripcion_modificada_id,
+            {"nuevo_monto": "45,00", "periodo_desde": "2026-12"},
+        )
+        suscripcion_suspendida_id = self._suscripcion(tarjeta_id, nombre="Streaming suspendido", monto="50,00", fecha_inicio="2026-11-05")
+        self.service.cambiar_estado_suscripcion(suscripcion_suspendida_id, "suspendida", "2026-11-20")
+        suscripcion_cancelada_id = self._suscripcion(tarjeta_id, nombre="Streaming cancelado", monto="60,00", fecha_inicio="2026-11-05")
+        self.service.cambiar_estado_suscripcion(suscripcion_cancelada_id, "cancelada", "2026-11-25")
+
+        detalle = self.service.obtener_detalle_tarjeta(tarjeta_id, periodo="2026-12")
+        total_periodo = detalle["total_periodo"]
+
+        self.assertEqual(total_periodo["total_cuotas_periodo"], 40000)
+        self.assertEqual(total_periodo["total_suscripciones_periodo"], 10000)
+        self.assertEqual(total_periodo["total_periodo"], 50000)
+        self.assertEqual(total_periodo["total_periodo_fmt"], "$500,00")
+        self.assertEqual(detalle["tarjeta"]["periodo_actual_centavos"], 30000)
+        self.assertEqual(detalle["tarjeta"]["periodo_actual_fmt"], "$300,00")
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT COUNT(*) AS total FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? AND periodo = '2026-12'",
+                (suscripcion_pagada_id,),
+            ).fetchone()["total"]
+            pendiente = conn.execute(
+                "SELECT estado FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?",
+                (compra_pendiente_id,),
+            ).fetchone()["estado"]
+        self.assertEqual(cobros, 1)
+        self.assertEqual(pendiente, "pendiente")
+
+    def test_total_periodo_cubre_solo_cuotas_solo_suscripciones_sin_conceptos_y_cambio_anio(self):
+        tarjeta_id = self._tarjeta()
+        self._compra(
+            tarjeta_id,
+            cuotas="2",
+            monto="200,00",
+            descripcion="Compra cambio de anio",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-10",
+        )
+        self._suscripcion(tarjeta_id, nombre="Servicio marzo", monto="80,00", fecha_inicio="2027-03-05")
+
+        solo_cuotas = self.service.obtener_detalle_tarjeta(tarjeta_id, periodo="2027-01")["total_periodo"]
+        solo_suscripciones = self.service.obtener_detalle_tarjeta(tarjeta_id, periodo="2027-03")["total_periodo"]
+        sin_conceptos = self.service.obtener_detalle_tarjeta(tarjeta_id, periodo="2026-11")["total_periodo"]
+
+        self.assertEqual(solo_cuotas["total_cuotas_periodo"], 10000)
+        self.assertEqual(solo_cuotas["total_suscripciones_periodo"], 0)
+        self.assertEqual(solo_cuotas["total_periodo"], 10000)
+        self.assertEqual(solo_suscripciones["total_cuotas_periodo"], 0)
+        self.assertEqual(solo_suscripciones["total_suscripciones_periodo"], 8000)
+        self.assertEqual(solo_suscripciones["total_periodo"], 8000)
+        self.assertEqual(sin_conceptos["total_cuotas_periodo"], 0)
+        self.assertEqual(sin_conceptos["total_suscripciones_periodo"], 0)
+        self.assertEqual(sin_conceptos["total_periodo_fmt"], "$0,00")
 
     def test_paga_cuota_crea_movimiento_y_evita_duplicado(self):
         tarjeta_id = self._tarjeta()
@@ -239,6 +368,104 @@ class TarjetasServiceTest(unittest.TestCase):
         self.assertEqual(movimientos[0]["monto_centavos"], -100000)
         self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-09-22")
 
+    def test_pago_manual_no_adelanta_periodo_futuro_con_segundo_click(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+
+        self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+
+        with self.assertRaisesRegex(self.service.TarjetasError, "periodo actual"):
+            self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+
+        with root_db.get_conn() as conn:
+            movimientos = conn.execute(
+                "SELECT fecha, descripcion, monto_centavos, categoria, subcategoria_id, tarjeta_id FROM movimientos WHERE suscripcion_tarjeta_id = ?",
+                (suscripcion_id,),
+            ).fetchall()
+            cobros = conn.execute(
+                "SELECT periodo, movimiento_id, monto_centavos, fecha_pago, origen FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?",
+                (suscripcion_id,),
+            ).fetchall()
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual(len(movimientos), 1)
+        self.assertEqual(movimientos[0]["fecha"], "2026-08-10")
+        self.assertEqual(movimientos[0]["descripcion"], "Suscripcion - Netflix")
+        self.assertEqual(movimientos[0]["monto_centavos"], -100000)
+        self.assertEqual(movimientos[0]["categoria"], "Electronica")
+        self.assertEqual(movimientos[0]["subcategoria_id"], self.subcategoria_id)
+        self.assertEqual(movimientos[0]["tarjeta_id"], tarjeta_id)
+        self.assertEqual(len(cobros), 1)
+        self.assertEqual(cobros[0]["periodo"], "2026-08")
+        self.assertTrue(cobros[0]["movimiento_id"])
+        self.assertEqual(cobros[0]["monto_centavos"], 100000)
+        self.assertEqual(cobros[0]["fecha_pago"], "2026-08-10")
+        self.assertEqual(cobros[0]["origen"], "manual")
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-09-22")
+
+    def test_pago_manual_no_registra_cobro_si_movimiento_no_se_crea(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
+        original = self.service.repo.crear_movimiento_cobro_suscripcion
+
+        def sin_movimiento(*args, **kwargs):
+            return None
+
+        self.service.repo.crear_movimiento_cobro_suscripcion = sin_movimiento
+        try:
+            with self.assertRaisesRegex(self.service.TarjetasError, "movimiento"):
+                self.service.pagar_suscripcion(suscripcion_id, "2026-08-10")
+        finally:
+            self.service.repo.crear_movimiento_cobro_suscripcion = original
+
+        with root_db.get_conn() as conn:
+            movimientos = conn.execute(
+                "SELECT COUNT(*) AS total FROM movimientos WHERE suscripcion_tarjeta_id = ?",
+                (suscripcion_id,),
+            ).fetchone()["total"]
+            cobros = conn.execute(
+                "SELECT COUNT(*) AS total FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?",
+                (suscripcion_id,),
+            ).fetchone()["total"]
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual(movimientos, 0)
+        self.assertEqual(cobros, 0)
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2026-08-22")
+
+    def test_pago_manual_diciembre_no_adelanta_enero_sin_indicar_periodo(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-12-31")
+
+        self.service.pagar_suscripcion(suscripcion_id, "2026-12-05")
+
+        with self.assertRaisesRegex(self.service.TarjetasError, "periodo actual"):
+            self.service.pagar_suscripcion(suscripcion_id, "2026-12-05")
+
+        with root_db.get_conn() as conn:
+            cobros = conn.execute(
+                "SELECT periodo FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ? ORDER BY periodo",
+                (suscripcion_id,),
+            ).fetchall()
+            movimientos = conn.execute(
+                "SELECT COUNT(*) AS total FROM movimientos WHERE suscripcion_tarjeta_id = ?",
+                (suscripcion_id,),
+            ).fetchone()["total"]
+            suscripcion = conn.execute(
+                "SELECT fecha_proximo_cobro FROM tarjeta_suscripciones WHERE id = ?",
+                (suscripcion_id,),
+            ).fetchone()
+
+        self.assertEqual([c["periodo"] for c in cobros], ["2026-12"])
+        self.assertEqual(movimientos, 1)
+        self.assertEqual(suscripcion["fecha_proximo_cobro"], "2027-01-31")
+
     def test_regulariza_periodos_vencidos_una_sola_vez(self):
         tarjeta_id = self._tarjeta()
         suscripcion_id = self._suscripcion(tarjeta_id, fecha_inicio="2026-08-22")
@@ -357,6 +584,120 @@ class TarjetasServiceTest(unittest.TestCase):
         self.assertEqual(suscripcion["estado"], "cancelada")
         self.assertEqual(suscripcion["fecha_cancelacion"], "2026-09-20")
         self.assertEqual([p["periodo"] for p in periodos], ["2026-09"])
+
+    def test_proyeccion_cuotas_usa_cuotas_pendientes_y_totales_por_mes(self):
+        tarjeta_id = self._tarjeta()
+        self._compra(
+            tarjeta_id,
+            cuotas="6",
+            monto="600,00",
+            descripcion="Televisor Samsung",
+            fecha_compra="2026-11-20",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-10",
+        )
+        self._compra(
+            tarjeta_id,
+            cuotas="2",
+            monto="200,00",
+            descripcion="Celular Motorola",
+            fecha_compra="2026-12-15",
+            fecha_inicio="2027-01-01",
+            primer_vencimiento="2027-01-10",
+        )
+        self._compra(
+            tarjeta_id,
+            cuotas="1",
+            monto="1000,00",
+            descripcion="Nombre de compra larguisimo para probar que la proyeccion no se rompe",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-20",
+        )
+        finalizada_id = self._compra(
+            tarjeta_id,
+            cuotas="1",
+            monto="999,00",
+            descripcion="Compra finalizada",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-10",
+        )
+        cancelada_id = self._compra(
+            tarjeta_id,
+            cuotas="3",
+            monto="300,00",
+            descripcion="Compra cancelada",
+            fecha_compra="2026-12-01",
+            fecha_inicio="2026-12-01",
+            primer_vencimiento="2026-12-10",
+        )
+        self._compra(
+            tarjeta_id,
+            cuotas="2",
+            monto="200,00",
+            descripcion="Compra fuera de ventana",
+            fecha_compra="2027-06-01",
+            fecha_inicio="2027-06-01",
+            primer_vencimiento="2027-06-10",
+        )
+        with root_db.get_conn() as conn:
+            conn.execute("UPDATE cuotas_tarjeta SET estado = 'pagada', fecha_pago = '2026-12-12' WHERE compra_tarjeta_id = ?", (finalizada_id,))
+            conn.execute("UPDATE compras_tarjeta SET estado = 'finalizada' WHERE id = ?", (finalizada_id,))
+            conn.execute("UPDATE compras_tarjeta SET estado = 'cancelada' WHERE id = ?", (cancelada_id,))
+            conn.commit()
+
+        detalle = self.service.obtener_detalle_tarjeta(tarjeta_id)
+        proyeccion = self.service.proyectar_cuotas_tarjeta(
+            detalle["compras"],
+            detalle["cuotas_por_compra"],
+            fecha_base="2026-12-15",
+        )
+
+        self.assertEqual([m["periodo"] for m in proyeccion["meses"]], [
+            "2026-12",
+            "2027-01",
+            "2027-02",
+            "2027-03",
+            "2027-04",
+            "2027-05",
+        ])
+        self.assertEqual(proyeccion["meses"][0]["label"], "Dic 2026")
+        self.assertEqual(proyeccion["meses"][1]["label"], "Ene 2027")
+        descripciones = [fila["descripcion"] for fila in proyeccion["filas"]]
+        self.assertIn("Televisor Samsung", descripciones)
+        self.assertIn("Celular Motorola", descripciones)
+        self.assertIn("Nombre de compra larguisimo para probar que la proyeccion no se rompe", descripciones)
+        self.assertNotIn("Compra finalizada", descripciones)
+        self.assertNotIn("Compra cancelada", descripciones)
+        self.assertNotIn("Compra fuera de ventana", descripciones)
+        self.assertEqual([t["monto_centavos"] for t in proyeccion["totales"]], [
+            110000,
+            20000,
+            20000,
+            10000,
+            10000,
+            10000,
+        ])
+
+    def test_proyeccion_cuotas_muestra_vacio_si_no_hay_compras_activas(self):
+        tarjeta_id = self._tarjeta()
+        compra_id = self._compra(tarjeta_id, cuotas="1", monto="500,00")
+        with root_db.get_conn() as conn:
+            conn.execute("UPDATE cuotas_tarjeta SET estado = 'pagada', fecha_pago = '2026-07-15' WHERE compra_tarjeta_id = ?", (compra_id,))
+            conn.execute("UPDATE compras_tarjeta SET estado = 'finalizada' WHERE id = ?", (compra_id,))
+            conn.commit()
+
+        detalle = self.service.obtener_detalle_tarjeta(tarjeta_id)
+        proyeccion = self.service.proyectar_cuotas_tarjeta(
+            detalle["compras"],
+            detalle["cuotas_por_compra"],
+            fecha_base="2026-12-15",
+        )
+
+        self.assertFalse(proyeccion["tiene_datos"])
+        self.assertEqual(len(proyeccion["meses"]), 6)
+        self.assertEqual([t["monto_centavos"] for t in proyeccion["totales"]], [0, 0, 0, 0, 0, 0])
 
 
 if __name__ == "__main__":

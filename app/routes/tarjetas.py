@@ -113,7 +113,7 @@ def detalle(tarjeta_id):
     periodo = (request.args.get("periodo") or date.today().strftime("%Y-%m")).strip()
     try:
         registrar_cobros_pendientes(tarjeta_id)
-        detalle_data = service.obtener_detalle_tarjeta(tarjeta_id, filtros=filtros)
+        detalle_data = service.obtener_detalle_tarjeta(tarjeta_id, filtros=filtros, periodo=periodo)
         categorias, subcategorias = service.obtener_form_options()
         periodo_resumen = service.resumen_cuotas_periodo(tarjeta_id, periodo) if periodo else None
     except service.TarjetasError as exc:
@@ -212,7 +212,7 @@ def editar_monto_suscripcion(suscripcion_id):
         tarjeta_id = resultado["tarjeta_id"]
         flash(
             "Monto actualizado a "
-            f"{resultado['monto_nuevo_fmt']} desde el periodo {resultado['periodo_desde']}."
+            f"{resultado['monto_nuevo_fmt']} desde {resultado['periodo_desde_fmt']}."
         )
     except service.TarjetasError as exc:
         flash(str(exc))
@@ -229,7 +229,7 @@ def pagar_suscripcion(suscripcion_id):
             legacy.generar_resumenes_mensuales()
         flash(
             "Pago de suscripcion registrado para el periodo "
-            f"{resultado['periodo']} por {resultado['monto_fmt']}."
+            f"{resultado['periodo_fmt']} por {resultado['monto_fmt']}."
         )
     except service.TarjetasError as exc:
         flash(str(exc))

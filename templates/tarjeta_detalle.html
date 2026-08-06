@@ -12,13 +12,75 @@
 {% block content %}
 <div class="summary-grid">
     <div class="card metric-card"><span>Compras activas</span><strong>{{ tarjeta.compras_activas }}</strong></div>
-    <div class="card metric-card"><span>Cuotas pendientes</span><strong>{{ tarjeta.cuotas_pendientes }}</strong></div>
+    <div class="card metric-card"><span>Monto total de la tarjeta</span><strong>{{ tarjeta.monto_total_tarjeta_fmt }}</strong></div>
+    <div class="card metric-card"><span>Pendiente total</span><strong>{{ tarjeta.pendiente_fmt }}</strong></div>
     <div class="card metric-card"><span>A pagar este periodo</span><strong>{{ tarjeta.periodo_actual_fmt }}</strong></div>
-    <div class="card metric-card"><span>Total pendiente</span><strong>{{ tarjeta.pendiente_fmt }}</strong></div>
-    <div class="card metric-card"><span>Total pagado</span><strong>{{ tarjeta.pagado_fmt }}</strong></div>
-    <div class="card metric-card"><span>Proximo vencimiento</span><strong>{{ tarjeta.proximo_vencimiento_fmt or '-' }}</strong></div>
-    <div class="card metric-card"><span>Planes finalizados</span><strong>{{ tarjeta.planes_finalizados }}</strong></div>
+    <div class="card metric-card">
+        <span>Total del periodo</span>
+        <strong>{{ total_periodo.total_periodo_fmt }}</strong>
+        <div class="metric-card-breakdown" aria-label="Desglose del total del periodo">
+            <small>Cuotas: {{ total_periodo.total_cuotas_periodo_fmt }}</small>
+            <small>Suscripciones: {{ total_periodo.total_suscripciones_periodo_fmt }}</small>
+        </div>
+    </div>
 </div>
+
+<section class="card installment-projection-card" aria-labelledby="installment-projection-title">
+    <div class="projection-header">
+        <div>
+            <h2 id="installment-projection-title">Proyeccion de cuotas</h2>
+            <p class="muted">Proximos 6 meses de cuotas pendientes para {{ tarjeta.nombre }}.</p>
+        </div>
+    </div>
+    {% if proyeccion_cuotas.tiene_datos %}
+    <div class="projection-table-scroll" tabindex="0" aria-label="Tabla de proyeccion de cuotas">
+        <table class="projection-table">
+            <thead>
+                <tr>
+                    <th scope="col">Compra</th>
+                    {% for mes in proyeccion_cuotas.meses %}
+                    <th scope="col">{{ mes.label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for fila in proyeccion_cuotas.filas %}
+                <tr>
+                    <th scope="row">
+                        <span class="projection-purchase-name">{{ fila.descripcion }}</span>
+                        <span class="projection-purchase-category">{{ fila.categoria }}</span>
+                    </th>
+                    {% for celda in fila.celdas %}
+                    <td class="{% if celda.tiene_cuotas %}has-installment{% else %}is-empty{% endif %}">
+                        {% if celda.tiene_cuotas %}
+                            {% for cuota in celda.cuotas %}
+                            <span class="projection-installment">
+                                <strong>{{ cuota.label }}</strong>
+                                <span>{{ cuota.importe_fmt }}</span>
+                            </span>
+                            {% endfor %}
+                        {% else %}
+                        <span class="projection-empty">-</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th scope="row">TOTAL</th>
+                    {% for total in proyeccion_cuotas.totales %}
+                    <td>{{ total.monto_fmt }}</td>
+                    {% endfor %}
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">No hay cuotas pendientes para proyectar en los proximos 6 meses.</div>
+    {% endif %}
+</section>
 
 <section class="section-band">
     <div class="section-header">
@@ -54,32 +116,64 @@
             <p class="muted">Cobros mensuales recurrentes vinculados a esta tarjeta.</p>
         </div>
     </div>
-    <div class="subscription-list">
+    <div class="status-filter" data-status-filter="subscriptions" data-default-status="activa" data-entity-label="suscripciones">
+        <div class="status-filter-options">
+            <button class="status-filter-option" type="button" data-status-filter-option="all" data-empty-message="No hay suscripciones registradas." aria-pressed="false">Todas <span data-status-count="all">0</span></button>
+            <button class="status-filter-option" type="button" data-status-filter-option="activa" data-empty-message="No hay suscripciones activas." aria-pressed="true">Activas <span data-status-count="activa">0</span></button>
+            <button class="status-filter-option" type="button" data-status-filter-option="suspendida" data-empty-message="No hay suscripciones suspendidas." aria-pressed="false">Suspendidas <span data-status-count="suspendida">0</span></button>
+            <button class="status-filter-option" type="button" data-status-filter-option="cancelada" data-empty-message="No hay suscripciones canceladas." aria-pressed="false">Canceladas <span data-status-count="cancelada">0</span></button>
+        </div>
+        <label class="category-filter">
+            <span class="sr-only">Categoria de suscripciones</span>
+            <select data-category-filter="subscriptions">
+                <option value="all">Todas las categorias</option>
+                {% for categoria in categorias %}
+                <option value="{{ categoria }}">{{ categoria }}</option>
+                {% endfor %}
+                <option value="__uncategorized" data-uncategorized-option hidden>Sin categoria</option>
+            </select>
+        </label>
+    </div>
+    <div class="subscription-list" data-status-filter-list="subscriptions">
         {% for suscripcion in suscripciones %}
-        <article class="subscription-item">
-            <div class="purchase-main">
-                <div>
+        <article class="subscription-item" data-status-filter-item data-status="{{ suscripcion.estado }}" data-category="{{ suscripcion.categoria if suscripcion.categoria in categorias else '' }}" data-search-text="{{ suscripcion.nombre }} {{ tarjeta.nombre }} {{ suscripcion.categoria if suscripcion.categoria in categorias else '' }}">
+            <div class="subscription-card-header">
+                <div class="subscription-title-block">
                     <h3>{{ suscripcion.nombre }}</h3>
-                    <div class="muted">{{ suscripcion.comercio or 'Sin comercio' }} Â· {{ suscripcion.categoria or 'Sin categoria' }}</div>
+                    <div class="muted">{{ tarjeta.nombre }} &middot; {{ suscripcion.categoria if suscripcion.categoria in categorias else 'Sin categoria' }}</div>
                 </div>
                 <span class="status-pill status-{{ suscripcion.estado }}">{{ suscripcion.estado }}</span>
             </div>
-            <div class="purchase-metrics">
-                <div><span>Monto mensual</span><strong>{{ suscripcion.monto_fmt }}</strong></div>
-                <div><span>Fecha de inicio</span><strong>{{ suscripcion.fecha_inicio_fmt }}</strong></div>
-                <div><span>Proximo cobro</span><strong>{{ suscripcion.fecha_proximo_cobro_fmt or '-' }}</strong></div>
-                <div><span>Periodo pendiente</span><strong>{{ suscripcion.periodo_pendiente or '-' }}</strong></div>
-                <div><span>Monto del periodo</span><strong>{{ suscripcion.monto_proximo_fmt }}</strong></div>
-                <div><span>Cobros generados</span><strong>{{ suscripcion.cobros_generados }}</strong></div>
-                <div><span>Ultimo periodo</span><strong>{{ suscripcion.ultimo_periodo_cobrado or '-' }}</strong></div>
-                <div><span>Ultimo cobro</span><strong>{{ suscripcion.ultimo_cobro_fmt or '-' }}</strong></div>
+            <div class="subscription-summary">
+                <div class="subscription-amount">
+                    <strong>{{ suscripcion.monto_fmt }}</strong>
+                    <span>por mes</span>
+                </div>
+                <div class="subscription-next-payment">
+                    <span>Proximo pago</span>
+                    <strong>{{ suscripcion.fecha_proximo_cobro_larga }}</strong>
+                    <small>Periodo: {{ suscripcion.periodo_pendiente_fmt }}</small>
+                    {% if suscripcion.mostrar_total_pendiente %}
+                    <small>Total pendiente: {{ suscripcion.total_pendiente_suscripcion_fmt }} &middot; {{ suscripcion.cantidad_periodos_pendientes }} periodos pendientes</small>
+                    {% endif %}
+                </div>
+                <div class="subscription-period-status subscription-period-status-{{ suscripcion.estado_periodo }}">
+                    <strong>{{ suscripcion.estado_periodo_texto }}</strong>
+                </div>
             </div>
             {% if suscripcion.estado == 'suspendida' and suscripcion.fecha_suspension_fmt %}
-            <div class="finance-note">Suspendida desde: <strong>{{ suscripcion.fecha_suspension_fmt }}</strong></div>
+            <div class="finance-note">Suspendida desde: <strong>{{ suscripcion.fecha_suspension_larga }}</strong></div>
             {% elif suscripcion.estado == 'cancelada' and suscripcion.fecha_cancelacion_fmt %}
-            <div class="finance-note">Cancelada desde: <strong>{{ suscripcion.fecha_cancelacion_fmt }}</strong></div>
+            <div class="finance-note">Cancelada desde: <strong>{{ suscripcion.fecha_cancelacion_larga }}</strong></div>
             {% endif %}
-            <div class="credit-card-actions">
+            <div class="credit-card-actions subscription-actions">
+                {% if suscripcion.puede_pagar %}
+                <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/pagar" class="table-action-form subscription-pay-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <input type="date" name="fecha_pago" value="">
+                    <button class="btn btn-sm btn-primary" type="submit" data-loading-text="Pagando..." data-confirm="Se registrara el pago de {{ suscripcion.nombre }} correspondiente a {{ suscripcion.periodo_pendiente_fmt }} por {{ suscripcion.monto_proximo_fmt }}. Este periodo no volvera a cobrarse automaticamente.">Pagar {{ suscripcion.periodo_pendiente_mes }}</button>
+                </form>
+                {% endif %}
                 {% if suscripcion.puede_editar_monto %}
                 <details class="subscription-action-detail">
                     <summary class="btn btn-sm">Editar monto</summary>
@@ -109,15 +203,7 @@
                     </form>
                 </details>
                 {% endif %}
-                {% if suscripcion.puede_pagar %}
-                <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/pagar" class="table-action-form subscription-pay-form">
-                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
-                    <input type="date" name="fecha_pago" value="">
-                    <button class="btn btn-sm btn-primary" type="submit" data-confirm="Se registrara el pago de {{ suscripcion.nombre }} correspondiente al periodo {{ suscripcion.periodo_pendiente }} por {{ suscripcion.monto_proximo_fmt }}. Este periodo no volvera a cobrarse automaticamente.">Pagar</button>
-                </form>
-                {% elif suscripcion.estado == 'activa' %}
-                <button class="btn btn-sm" type="button" disabled>Periodo pagado</button>
-                {% endif %}
+                <button class="btn btn-sm" type="button" data-dialog-target="subscription-details-{{ suscripcion.id }}">Ver detalles</button>
                 {% if suscripcion.puede_suspender %}
                 <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/suspender" class="table-action-form">
                     <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
@@ -133,15 +219,73 @@
                 {% if suscripcion.puede_cancelar %}
                 <form method="post" action="/tarjetas/suscripciones/{{ suscripcion.id }}/cancelar" class="table-action-form">
                     <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
-                    <button class="btn btn-sm danger" type="submit" data-confirm="Cancelar definitivamente esta suscripcion?">Cancelar</button>
+                    <button class="btn btn-sm danger" type="submit" data-confirm="Queres cancelar esta suscripcion? La suscripcion dejara de generar nuevos periodos automaticamente. Los movimientos ya registrados no seran eliminados.">Cancelar</button>
                 </form>
                 {% endif %}
             </div>
+            <dialog class="subscription-dialog" id="subscription-details-{{ suscripcion.id }}">
+                <div class="subscription-dialog-header">
+                    <div>
+                        <h3>Detalles de la suscripcion</h3>
+                        <p class="muted">{{ suscripcion.nombre }}</p>
+                    </div>
+                    <button class="btn btn-sm" type="button" data-dialog-close>Cerrar</button>
+                </div>
+                <dl class="subscription-detail-grid">
+                    <div>
+                        <dt>Tarjeta</dt>
+                        <dd>{{ tarjeta.nombre }}</dd>
+                    </div>
+                    <div>
+                        <dt>Categoria</dt>
+                        <dd>{{ suscripcion.categoria if suscripcion.categoria in categorias else 'Sin categoria' }}</dd>
+                    </div>
+                    <div>
+                        <dt>Comercio</dt>
+                        <dd>{{ suscripcion.comercio or 'Sin comercio' }}</dd>
+                    </div>
+                    <div>
+                        <dt>Fecha de inicio</dt>
+                        <dd>{{ suscripcion.fecha_inicio_larga }}</dd>
+                    </div>
+                    <div>
+                        <dt>Ultimo pago</dt>
+                        <dd>{{ suscripcion.ultimo_cobro_larga }}</dd>
+                    </div>
+                    <div>
+                        <dt>Ultimo periodo pagado</dt>
+                        <dd>{{ suscripcion.ultimo_periodo_cobrado_fmt }}</dd>
+                    </div>
+                    <div>
+                        <dt>Pagos registrados</dt>
+                        <dd>{% if suscripcion.cobros_generados > 0 %}{{ suscripcion.cobros_generados }}{% else %}Sin pagos registrados{% endif %}</dd>
+                    </div>
+                    <div>
+                        <dt>Monto del proximo periodo</dt>
+                        <dd>{{ suscripcion.monto_proximo_fmt }}</dd>
+                    </div>
+                    {% if suscripcion.mostrar_total_pendiente %}
+                    <div>
+                        <dt>Total pendiente</dt>
+                        <dd>{{ suscripcion.total_pendiente_suscripcion_fmt }} en {{ suscripcion.cantidad_periodos_pendientes }} periodos</dd>
+                    </div>
+                    {% endif %}
+                </dl>
+                {% if suscripcion.periodos_pendientes %}
+                <div class="subscription-pending-list">
+                    <h4>Periodos pendientes</h4>
+                    <ul>
+                        {% for pendiente in suscripcion.periodos_pendientes %}
+                        <li><span>{{ pendiente.periodo_fmt }}</span><strong>{{ pendiente.monto_fmt }}</strong></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                <a class="btn btn-sm" href="#historial-tarjeta" data-dialog-close>Ver historial de pagos</a>
+            </dialog>
         </article>
         {% endfor %}
-        {% if not suscripciones %}
-        <div class="empty-state">Todavia no hay suscripciones en esta tarjeta.</div>
-        {% endif %}
+        <div class="empty-state" data-status-filter-empty="subscriptions" hidden>No hay suscripciones activas.</div>
     </div>
 </section>
 
@@ -151,60 +295,105 @@
             <h2>Compras</h2>
             <p class="muted">Planes activos, finalizados o cancelados.</p>
         </div>
-        <form method="get" action="/tarjetas/{{ tarjeta.id }}" class="card-filter-form compact-filter">
-            <input type="hidden" name="periodo" value="{{ periodo }}">
-            <select name="estado">
-                <option value="" {% if not filtros.estado %}selected{% endif %}>Todos los estados</option>
-                <option value="activa" {% if filtros.estado == 'activa' %}selected{% endif %}>Activa</option>
-                <option value="finalizada" {% if filtros.estado == 'finalizada' %}selected{% endif %}>Finalizada</option>
-                <option value="cancelada" {% if filtros.estado == 'cancelada' %}selected{% endif %}>Cancelada</option>
-            </select>
-            <select name="categoria">
-                <option value="">Todas las categorias</option>
-                {% for categoria in categorias %}
-                <option value="{{ categoria }}" {% if filtros.categoria == categoria %}selected{% endif %}>{{ categoria }}</option>
-                {% endfor %}
-            </select>
-            <label class="check-inline"><input type="checkbox" name="pendientes" value="1" {% if filtros.pendientes == '1' %}checked{% endif %}> Pendientes</label>
-            <label class="check-inline"><input type="checkbox" name="pagadas" value="1" {% if filtros.pagadas == '1' %}checked{% endif %}> Pagadas</label>
-            <button class="btn" type="submit">Filtrar</button>
-        </form>
     </div>
 
-    <div class="purchase-list">
+    <div class="status-filter" data-status-filter="purchases" data-default-status="all" data-entity-label="compras">
+        <div class="status-filter-options">
+            <button class="status-filter-option" type="button" data-status-filter-option="all" data-empty-message="No hay compras registradas." aria-pressed="true">Todas <span data-status-count="all">0</span></button>
+            <button class="status-filter-option" type="button" data-status-filter-option="activa" data-empty-message="No hay compras en curso." aria-pressed="false">En curso <span data-status-count="activa">0</span></button>
+            <button class="status-filter-option" type="button" data-status-filter-option="finalizada" data-empty-message="No hay compras finalizadas." aria-pressed="false">Finalizadas <span data-status-count="finalizada">0</span></button>
+            <button class="status-filter-option" type="button" data-status-filter-option="cancelada" data-empty-message="No hay compras canceladas." aria-pressed="false">Canceladas <span data-status-count="cancelada">0</span></button>
+        </div>
+        <label class="category-filter">
+            <span class="sr-only">Categoria de compras</span>
+            <select data-category-filter="purchases">
+                <option value="all">Todas las categorias</option>
+                {% for categoria in categorias %}
+                <option value="{{ categoria }}">{{ categoria }}</option>
+                {% endfor %}
+                <option value="__uncategorized" data-uncategorized-option hidden>Sin categoria</option>
+            </select>
+        </label>
+    </div>
+
+    <div class="purchase-list" data-status-filter-list="purchases">
         {% for compra in compras %}
-        <article class="purchase-item">
-            <div class="purchase-main">
-                <div>
+        <article class="purchase-item" data-status-filter-item data-status="{{ compra.estado }}" data-category="{{ compra.categoria if compra.categoria in categorias else '' }}" data-search-text="{{ compra.descripcion }} {{ compra.tarjeta_nombre }} {{ compra.categoria if compra.categoria in categorias else '' }}">
+            <div class="purchase-card-header">
+                <div class="purchase-title-block">
                     <h3>{{ compra.descripcion }}</h3>
+                    <div class="muted">{{ compra.tarjeta_nombre }} &middot; {{ compra.categoria if compra.categoria in categorias else 'Sin categoria' }}</div>
                     <div class="muted">{{ compra.comercio or 'Sin comercio' }} · {{ compra.categoria or 'Sin categoria' }}</div>
                 </div>
-                <span class="status-pill status-{{ compra.estado }}">{{ compra.estado }}</span>
+                <span class="status-pill status-{{ compra.estado }}">{{ compra.estado_label }}</span>
             </div>
-            <div class="purchase-metrics">
-                <div><span>Monto original</span><strong>{{ compra.monto_original_fmt }}</strong></div>
-                <div><span>Valor cuota</span><strong>{{ compra.valor_cuota_fmt }}</strong></div>
-                <div><span>Cuota actual</span><strong>{{ compra.cuota_actual or '-' }} / {{ compra.cantidad_cuotas }}</strong></div>
-                <div><span>Pagadas</span><strong>{{ compra.cuotas_pagadas }}</strong></div>
-                <div><span>Pendientes</span><strong>{{ compra.cuotas_pendientes }}</strong></div>
-                <div><span>Proximo vencimiento</span><strong>{{ compra.proximo_vencimiento_fmt or '-' }}</strong></div>
-                <div><span>Total pendiente</span><strong>{{ compra.total_pendiente_fmt }}</strong></div>
-                <div><span>Total financiado</span><strong>{{ compra.total_financiado_fmt }}</strong></div>
+            <div class="purchase-summary">
+                <div class="purchase-amount">
+                    <strong>{{ compra.cuota_actual_importe_fmt }}</strong>
+                    <span>por cuota</span>
+                </div>
+                <div class="purchase-next-installment">
+                    <span>Proxima cuota</span>
+                    <strong>{{ compra.proxima_cuota_label }}</strong>
+                    <small>Vencimiento: {{ compra.proximo_vencimiento_larga }}</small>
+                </div>
+                <div class="purchase-progress">
+                    <span>Progreso</span>
+                    <strong>{{ compra.progreso_texto }}</strong>
+                    <small>{{ compra.cuotas_restantes }} cuotas restantes</small>
+                    <div class="progress-bar" aria-hidden="true"><span style="width: {{ compra.progreso_pct }}%;"></span></div>
+                    <small>{{ compra.progreso_pct }}%</small>
+                </div>
             </div>
+            <div class="purchase-period-status purchase-period-status-{{ compra.estado_cuota }}">
+                <strong>{{ compra.estado_cuota_texto }}</strong>
+            </div>
+            {% if compra.cuotas_relacion_inconsistente %}
+            <div class="finance-note warn-text">La cantidad de cuotas no coincide con el total esperado. Revisar datos de esta compra.</div>
+            {% endif %}
             {% if compra.diferencia_fmt != '$0,00' %}
             <div class="finance-note">Diferencia/interes: <strong>{{ compra.diferencia_fmt }}</strong></div>
             {% endif %}
-            {% if compra.cuotas_pendientes > 0 %}
-            <form method="post" action="/tarjetas/compras/{{ compra.id }}/pagar" class="pay-form">
-                <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
-                <input type="date" name="fecha_pago" value="">
-                <input type="text" name="importe" placeholder="Importe opcional">
-                <button class="btn btn-primary" type="submit" data-confirm="Pagar la primera cuota pendiente?">Pagar proxima cuota</button>
-            </form>
-            {% endif %}
-            <details class="installments-detail">
-                <summary>Ver cuotas</summary>
-                <div class="table-scroll">
+            <div class="credit-card-actions purchase-actions">
+                {% if compra.cuotas_pendientes > 0 and compra.estado != 'cancelada' %}
+                <form method="post" action="/tarjetas/compras/{{ compra.id }}/pagar" class="pay-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <input type="date" name="fecha_pago" value="">
+                    <input type="text" name="importe" placeholder="Importe opcional">
+                    <button class="btn btn-primary" type="submit" data-loading-text="Pagando..." data-confirm="Pagar {{ compra.proxima_cuota_label }}?">Pagar cuota {{ compra.cuota_actual }}</button>
+                </form>
+                {% endif %}
+                <button class="btn" type="button" data-dialog-target="purchase-details-{{ compra.id }}">Ver detalles</button>
+            </div>
+            <dialog class="entity-dialog" id="purchase-details-{{ compra.id }}">
+                <div class="entity-dialog-header">
+                    <div>
+                        <h3>Detalles de la compra</h3>
+                        <p class="muted">{{ compra.descripcion }}</p>
+                    </div>
+                    <button class="btn btn-sm" type="button" data-dialog-close>Cerrar</button>
+                </div>
+                <dl class="entity-detail-grid">
+                    <div><dt>Tarjeta</dt><dd>{{ compra.tarjeta_nombre }}</dd></div>
+                    <div><dt>Categoria</dt><dd>{{ compra.categoria if compra.categoria in categorias else 'Sin categoria' }}</dd></div>
+                    <div><dt>Comercio</dt><dd>{{ compra.comercio or 'Sin comercio' }}</dd></div>
+                    <div><dt>Fecha de compra</dt><dd>{{ compra.fecha_compra_larga }}</dd></div>
+                    <div><dt>Monto total original</dt><dd>{{ compra.monto_original_fmt }}</dd></div>
+                    <div><dt>Total financiado</dt><dd>{{ compra.total_financiado_fmt }}</dd></div>
+                    <div><dt>Cantidad de cuotas</dt><dd>{{ compra.cantidad_cuotas }}</dd></div>
+                    <div><dt>Monto inicial por cuota</dt><dd>{{ compra.valor_cuota_fmt }}</dd></div>
+                    <div><dt>Cuotas pagadas</dt><dd>{{ compra.cuotas_pagadas }}</dd></div>
+                    <div><dt>Cuotas restantes</dt><dd>{{ compra.cuotas_restantes }}</dd></div>
+                    <div><dt>Monto pagado</dt><dd>{{ compra.monto_pagado_fmt }}</dd></div>
+                    <div><dt>Saldo pendiente</dt><dd>{{ compra.saldo_pendiente_fmt }}</dd></div>
+                    <div><dt>Ultima cuota pagada</dt><dd>{{ compra.ultima_cuota_pagada_label }}</dd></div>
+                    <div><dt>Fecha del ultimo pago</dt><dd>{{ compra.ultima_fecha_pago_larga }}</dd></div>
+                    <div><dt>Proxima cuota</dt><dd>{{ compra.proxima_cuota_label }}</dd></div>
+                    <div><dt>Proximo vencimiento</dt><dd>{{ compra.proximo_vencimiento_larga }}</dd></div>
+                </dl>
+                <div class="installments-detail">
+                    <h4>Historial de cuotas</h4>
+                    <div class="table-scroll">
                     <table class="table installments-table">
                         <thead>
                             <tr>
@@ -222,15 +411,15 @@
                             <tr>
                                 <td>{{ cuota.numero_cuota }} / {{ cuota.cantidad_total_cuotas }}</td>
                                 <td class="amount">{{ cuota.importe_fmt }}</td>
-                                <td>{{ cuota.fecha_vencimiento_fmt }}</td>
+                                <td>{{ cuota.fecha_vencimiento_larga }}</td>
                                 <td><span class="status-pill status-{{ cuota.estado }}">{{ cuota.estado }}</span></td>
-                                <td>{{ cuota.fecha_pago_fmt or '-' }}</td>
+                                <td>{{ cuota.fecha_pago_larga }}</td>
                                 <td>{% if cuota.movimiento_id %}<a href="/movimientos?q={{ compra.descripcion }}">#{{ cuota.movimiento_id }}</a>{% else %}-{% endif %}</td>
                                 <td>
                                     {% if cuota.estado == 'pendiente' %}
                                     <form method="post" action="/tarjetas/cuotas/{{ cuota.id }}/pagar" class="table-action-form">
                                         <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
-                                        <button class="btn btn-sm btn-primary" type="submit" data-confirm="Pagar esta cuota?">Pagar</button>
+                                        <button class="btn btn-sm btn-primary" type="submit" data-loading-text="Pagando..." data-confirm="Pagar esta cuota?">Pagar</button>
                                     </form>
                                     {% elif cuota.estado == 'pagada' %}
                                     <form method="post" action="/tarjetas/cuotas/{{ cuota.id }}/anular" class="table-action-form">
@@ -246,17 +435,16 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                 </div>
-            </details>
+            </dialog>
         </article>
         {% endfor %}
-        {% if not compras %}
-        <div class="empty-state">No hay compras para los filtros seleccionados.</div>
-        {% endif %}
+        <div class="empty-state" data-status-filter-empty="purchases" hidden>No hay compras registradas.</div>
     </div>
 </section>
 
-<section class="section-band">
+<section class="section-band" id="historial-tarjeta">
     <div class="section-header">
         <div>
             <h2>Historial</h2>

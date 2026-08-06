@@ -252,18 +252,12 @@ def asegurar_schema_tarjetas(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_cobros_periodo ON tarjeta_suscripcion_cobros(periodo);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_historial_montos_suscripcion ON tarjeta_suscripcion_historial_montos(suscripcion_id);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tarjeta_suscripcion_historial_montos_periodo ON tarjeta_suscripcion_historial_montos(periodo_desde);")
+    conn.execute("DROP INDEX IF EXISTS ux_movimiento_suscripcion_periodo_activo;")
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS ux_movimiento_cuota_tarjeta_activo
         ON movimientos(cuota_tarjeta_id)
         WHERE generado_desde_tarjeta = 1
           AND cuota_tarjeta_id IS NOT NULL
-          AND COALESCE(anulado, 0) = 0;
-    """)
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_movimiento_suscripcion_periodo_activo
-        ON movimientos(suscripcion_tarjeta_id, substr(fecha, 1, 7))
-        WHERE generado_desde_tarjeta = 1
-          AND suscripcion_tarjeta_id IS NOT NULL
           AND COALESCE(anulado, 0) = 0;
     """)
 

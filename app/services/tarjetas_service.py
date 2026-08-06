@@ -1,3 +1,4 @@
+import sqlite3
 import uuid
 from datetime import date
 
@@ -6,7 +7,17 @@ from app.repositories import tarjetas_repository as repo
 from app.utils.money import parse_centavos
 from app.utils.tarjetas_financieras import dividir_en_cuotas, sumar_meses, ultimo_dia_mes
 from csv_reader import formato_moneda_ar
-from date_utils import es_fecha_iso_valida, fecha_para_mostrar, normalizar_fecha_a_iso
+from date_utils import (
+    es_fecha_iso_valida,
+    fecha_larga_para_mostrar,
+    fecha_para_mostrar,
+    mes_de_fecha,
+    nombre_mes_periodo,
+    normalizar_fecha,
+    normalizar_fecha_a_iso,
+    periodo_corto_para_mostrar,
+    periodo_para_mostrar,
+)
 
 
 class TarjetasError(ValueError):
@@ -291,14 +302,15 @@ def obtener_form_options():
     return categorias, subcategorias
 
 
-def obtener_detalle_tarjeta(tarjeta_id, filtros=None):
+def obtener_detalle_tarjeta(tarjeta_id, filtros=None, periodo=None):
     asegurar_modulo_tarjetas()
     filtros = filtros or {}
+    periodo = validar_periodo_mes(periodo or date.today().strftime("%Y-%m"))
     with get_conn() as conn:
-        tarjeta = repo.obtener_resumen_tarjeta(conn, tarjeta_id)
+        tarjeta = repo.obtener_resumen_tarjeta(conn, tarjeta_id, periodo)
         if not tarjeta:
             raise TarjetasError("La tarjeta no existe.")
-        compras_rows = repo.listar_compras_tarjeta(conn, tarjeta_id, filtros)
+        compras_rows = repo.listar_compras_tarjeta(conn, tarjeta_id, {})
         suscripciones_rows = repo.listar_suscripciones_tarjeta(conn, tarjeta_id)
         historial_rows = repo.listar_historial_tarjeta(conn, tarjeta_id, filtros)
         cuotas_por_compra = {row["id"]: [] for row in compras_rows}
@@ -307,11 +319,16 @@ def obtener_detalle_tarjeta(tarjeta_id, filtros=None):
             if cuota["compra_tarjeta_id"] in compra_ids:
                 cuotas_por_compra[cuota["compra_tarjeta_id"]].append(presentar_cuota(cuota))
         suscripciones = [presentar_suscripcion(row, conn) for row in suscripciones_rows]
+        compras = [presentar_compra(row, cuotas_por_compra.get(row["id"], []), tarjeta) for row in compras_rows]
+        proyeccion_cuotas = proyectar_cuotas_tarjeta(compras, cuotas_por_compra)
+        total_periodo = calcular_total_periodo_tarjeta(conn, tarjeta_id, periodo, suscripciones_rows)
     return {
         "tarjeta": presentar_resumen_tarjeta(tarjeta),
-        "compras": [presentar_compra(row) for row in compras_rows],
+        "compras": compras,
         "suscripciones": suscripciones,
         "cuotas_por_compra": cuotas_por_compra,
+        "proyeccion_cuotas": proyeccion_cuotas,
+        "total_periodo": presentar_total_periodo(total_periodo),
         "historial": [presentar_historial(row) for row in historial_rows],
     }
 
@@ -366,24 +383,29 @@ def procesar_cobro_suscripcion(conn, suscripcion, fecha_prevista, fecha_pago, or
         raise TarjetasError("El monto de la suscripcion debe ser mayor que cero.")
 
     tx_hash = f"tarjeta-suscripcion-{suscripcion['id']}-{periodo}"
-    movimiento_id = repo.crear_movimiento_cobro_suscripcion(
-        conn,
-        suscripcion,
-        fecha_pago,
-        periodo,
-        monto_centavos,
-        tx_hash,
-    )
-    creado = repo.registrar_cobro_suscripcion(
-        conn,
-        suscripcion["id"],
-        movimiento_id,
-        periodo,
-        fecha_prevista,
-        monto_centavos,
-        fecha_pago,
-        origen,
-    )
+    try:
+        movimiento_id = repo.crear_movimiento_cobro_suscripcion(
+            conn,
+            suscripcion,
+            fecha_pago,
+            periodo,
+            monto_centavos,
+            tx_hash,
+        )
+        if not movimiento_id:
+            raise TarjetasError("No se pudo crear el movimiento del cobro de suscripcion.")
+        creado = repo.registrar_cobro_suscripcion(
+            conn,
+            suscripcion["id"],
+            movimiento_id,
+            periodo,
+            fecha_prevista,
+            monto_centavos,
+            fecha_pago,
+            origen,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise TarjetasError("El periodo de la suscripcion ya fue pagado.") from exc
     if not creado:
         raise TarjetasError("El periodo de la suscripcion ya fue pagado.")
     return movimiento_id
@@ -407,13 +429,12 @@ def pagar_suscripcion(suscripcion_id, fecha_pago=None):
         fecha_prevista = suscripcion["fecha_proximo_cobro"]
         periodo = fecha_prevista[:7]
         if repo.obtener_cobro_suscripcion_periodo(conn, suscripcion_id, periodo):
-            repo.actualizar_proximo_cobro_suscripcion(
-                conn,
-                suscripcion_id,
-                siguiente_fecha_no_pagada(conn, suscripcion_id, fecha_prevista),
+            raise TarjetasError("Esta suscripcion ya fue pagada para ese periodo.")
+        if periodo > fecha[:7]:
+            raise TarjetasError(
+                "Esta suscripcion ya fue pagada para el periodo actual. "
+                f"El proximo periodo pendiente es {periodo_para_mostrar(periodo)}."
             )
-            conn.commit()
-            raise TarjetasError("Ese periodo ya fue pagado.")
 
         movimiento_id = procesar_cobro_suscripcion(
             conn,
@@ -430,6 +451,7 @@ def pagar_suscripcion(suscripcion_id, fecha_pago=None):
         "tarjeta_id": int(suscripcion["tarjeta_id"]),
         "movimiento_id": movimiento_id,
         "periodo": periodo,
+        "periodo_fmt": periodo_para_mostrar(periodo),
         "monto_centavos": monto,
         "monto_fmt": formato_moneda_ar(monto),
         "proximo_cobro": proximo,
@@ -481,6 +503,7 @@ def editar_monto_suscripcion(suscripcion_id, form, usuario_id=None):
         "monto_nuevo_centavos": nuevo_monto,
         "monto_nuevo_fmt": formato_moneda_ar(nuevo_monto),
         "periodo_desde": periodo_desde,
+        "periodo_desde_fmt": periodo_para_mostrar(periodo_desde),
     }
 
 
@@ -627,72 +650,367 @@ def anular_pago(cuota_id, fecha_anulacion=None, observaciones=""):
         conn.commit()
 
 
-def presentar_tarjeta(row):
-    pendiente = int(row["pendiente_centavos"] or 0)
-    pagado = int(row["pagado_centavos"] or 0)
+def rango_periodo(periodo):
+    periodo = validar_periodo_mes(periodo)
+    year, month = [int(part) for part in periodo.split("-")]
+    return f"{periodo}-01", f"{periodo}-{ultimo_dia_mes(year, month):02d}"
+
+
+def suscripcion_corresponde_periodo(suscripcion, periodo):
+    inicio_periodo, fin_periodo = rango_periodo(periodo)
+    fecha_inicio = normalizar_fecha(suscripcion["fecha_inicio"])
+    if not es_fecha_iso_valida(fecha_inicio) or fecha_inicio > fin_periodo:
+        return False
+
+    fecha_cancelacion = normalizar_fecha(suscripcion["fecha_cancelacion"])
+    if es_fecha_iso_valida(fecha_cancelacion) and fecha_cancelacion < inicio_periodo:
+        return False
+
+    fecha_suspension = normalizar_fecha(suscripcion["fecha_suspension"])
+    if suscripcion["estado"] == "suspendida":
+        if not es_fecha_iso_valida(fecha_suspension):
+            return False
+        if fecha_suspension <= inicio_periodo:
+            return False
+
+    if suscripcion["estado"] == "cancelada" and not es_fecha_iso_valida(fecha_cancelacion):
+        return False
+
+    return True
+
+
+def calcular_total_periodo_tarjeta(conn, tarjeta_id, periodo, suscripciones_rows=None):
+    periodo = validar_periodo_mes(periodo)
+    total_cuotas = repo.total_cuotas_periodo_tarjeta(conn, tarjeta_id, periodo)
+    cobros = repo.cobros_suscripciones_periodo_tarjeta(conn, tarjeta_id, periodo)
+    cobros_por_suscripcion = {
+        int(row["suscripcion_id"]): int(row["monto_centavos"] or 0)
+        for row in cobros
+    }
+    suscripciones = suscripciones_rows if suscripciones_rows is not None else repo.listar_suscripciones_tarjeta(conn, tarjeta_id)
+    total_suscripciones = 0
+    for suscripcion in suscripciones:
+        suscripcion_id = int(suscripcion["id"])
+        if suscripcion_id in cobros_por_suscripcion:
+            total_suscripciones += cobros_por_suscripcion[suscripcion_id]
+            continue
+        if suscripcion_corresponde_periodo(suscripcion, periodo):
+            total_suscripciones += monto_suscripcion_para_periodo(conn, suscripcion, periodo)
+
     return {
-        **dict(row),
-        "activa_bool": int(row["activa"] or 0) == 1,
+        "periodo": periodo,
+        "total_cuotas_periodo": total_cuotas,
+        "total_suscripciones_periodo": total_suscripciones,
+        "total_periodo": total_cuotas + total_suscripciones,
+    }
+
+
+def presentar_total_periodo(total_periodo):
+    total_cuotas = int(total_periodo["total_cuotas_periodo"] or 0)
+    total_suscripciones = int(total_periodo["total_suscripciones_periodo"] or 0)
+    total = int(total_periodo["total_periodo"] or 0)
+    return {
+        **total_periodo,
+        "total_cuotas_periodo_fmt": formato_moneda_ar(total_cuotas),
+        "total_suscripciones_periodo_fmt": formato_moneda_ar(total_suscripciones),
+        "total_periodo_fmt": formato_moneda_ar(total),
+    }
+
+
+def presentar_tarjeta(row):
+    data = dict(row)
+    pendiente = int(data.get("pendiente_centavos") or 0)
+    pagado = int(data.get("pagado_centavos") or 0)
+    return {
+        **data,
+        "activa_bool": int(data.get("activa") or 0) == 1,
         "pendiente_fmt": formato_moneda_ar(pendiente),
         "pagado_fmt": formato_moneda_ar(pagado),
-        "proximo_vencimiento_fmt": fecha_para_mostrar(row["proximo_vencimiento"]),
-        "compras_activas": int(row["compras_activas"] or 0),
+        "proximo_vencimiento_fmt": fecha_para_mostrar(data.get("proximo_vencimiento")),
+        "compras_activas": int(data.get("compras_activas") or 0),
     }
 
 
 def presentar_resumen_tarjeta(row):
     data = presentar_tarjeta(row)
+    monto_total = int(data.get("monto_total_tarjeta_centavos") or 0)
     data.update({
+        "monto_total_tarjeta_fmt": formato_moneda_ar(monto_total),
         "periodo_actual_fmt": formato_moneda_ar(int(row["periodo_actual_centavos"] or 0)),
-        "cuotas_pendientes": int(row["cuotas_pendientes"] or 0),
-        "planes_finalizados": int(row["planes_finalizados"] or 0),
     })
     return data
 
 
-def presentar_compra(row):
+def generar_meses_proyeccion(fecha_base=None, cantidad=6):
+    fecha_iso = normalizar_fecha(fecha_base or date.today().isoformat())
+    if not es_fecha_iso_valida(fecha_iso):
+        fecha_iso = date.today().isoformat()
+    inicio = f"{fecha_iso[:7]}-01"
+    meses = []
+    for offset in range(int(cantidad)):
+        periodo = sumar_meses(inicio, offset)[:7]
+        meses.append({
+            "periodo": periodo,
+            "label": periodo_corto_para_mostrar(periodo),
+        })
+    return meses
+
+
+def _celda_proyeccion_vacia(periodo):
+    return {
+        "periodo": periodo,
+        "cuotas": [],
+        "total_centavos": 0,
+        "total_fmt": formato_moneda_ar(0),
+        "tiene_cuotas": False,
+    }
+
+
+def proyectar_cuotas_tarjeta(compras, cuotas_por_compra, fecha_base=None, cantidad_meses=6):
+    meses = generar_meses_proyeccion(fecha_base, cantidad_meses)
+    indice_periodos = {mes["periodo"]: index for index, mes in enumerate(meses)}
+    totales_centavos = [0 for _ in meses]
+    filas = []
+
+    for compra in compras:
+        cuotas_pendientes = int(compra.get("cuotas_pendientes") or 0)
+        if compra.get("estado") != "activa" or cuotas_pendientes <= 0:
+            continue
+
+        celdas = [_celda_proyeccion_vacia(mes["periodo"]) for mes in meses]
+        compra_tiene_impacto = False
+        for cuota in cuotas_por_compra.get(compra["id"], []):
+            if cuota.get("estado") != "pendiente":
+                continue
+            periodo = mes_de_fecha(cuota.get("fecha_vencimiento"))
+            if periodo not in indice_periodos:
+                continue
+
+            indice = indice_periodos[periodo]
+            importe = int(cuota.get("importe_centavos") or 0)
+            numero = int(cuota.get("numero_cuota") or 0)
+            total = int(cuota.get("cantidad_total_cuotas") or compra.get("cantidad_cuotas") or 0)
+            celdas[indice]["cuotas"].append({
+                "numero": numero,
+                "total": total,
+                "label": f"{numero}/{total}" if numero and total else "Cuota",
+                "importe_centavos": importe,
+                "importe_fmt": formato_moneda_ar(importe),
+                "fecha_vencimiento": cuota.get("fecha_vencimiento"),
+                "fecha_vencimiento_fmt": cuota.get("fecha_vencimiento_fmt") or fecha_para_mostrar(cuota.get("fecha_vencimiento")),
+            })
+            celdas[indice]["total_centavos"] += importe
+            celdas[indice]["total_fmt"] = formato_moneda_ar(celdas[indice]["total_centavos"])
+            celdas[indice]["tiene_cuotas"] = True
+            totales_centavos[indice] += importe
+            compra_tiene_impacto = True
+
+        if compra_tiene_impacto:
+            filas.append({
+                "compra_id": compra["id"],
+                "descripcion": compra.get("descripcion") or "Compra sin descripcion",
+                "categoria": compra.get("categoria") or "Sin categoria",
+                "celdas": celdas,
+            })
+
+    totales = []
+    for mes, total in zip(meses, totales_centavos):
+        totales.append({
+            "periodo": mes["periodo"],
+            "monto_centavos": total,
+            "monto_fmt": formato_moneda_ar(total),
+        })
+
+    return {
+        "meses": meses,
+        "filas": filas,
+        "totales": totales,
+        "tiene_datos": bool(filas),
+    }
+
+
+def presentar_compra(row, cuotas=None, tarjeta=None):
+    cuotas = cuotas or []
     monto = int(row["monto_original_centavos"] or 0)
     cuota = int(row["valor_cuota_centavos"] or 0)
     total_fin = int(row["total_financiado_centavos"] or 0)
     diferencia = total_fin - monto
+    cuota_actual = int(row["cuota_actual"] or 0)
+    proxima_cuota = None
+    if cuota_actual:
+        proxima_cuota = next((c for c in cuotas if int(c["numero_cuota"] or 0) == cuota_actual), None)
+    if not proxima_cuota:
+        proxima_cuota = next((c for c in cuotas if c["estado"] == "pendiente"), None)
+    cuota_actual_importe = int(proxima_cuota["importe_centavos"] or 0) if proxima_cuota else cuota
+    cuotas_pagadas = int(row["cuotas_pagadas"] or 0)
+    cuotas_pendientes = int(row["cuotas_pendientes"] or 0)
+    cantidad_cuotas = int(row["cantidad_cuotas"] or 0)
+    monto_pagado = sum(int(c["importe_centavos"] or 0) for c in cuotas if c["estado"] == "pagada")
+    saldo_pendiente = sum(int(c["importe_centavos"] or 0) for c in cuotas if c["estado"] == "pendiente")
+    progreso_pct = round((cuotas_pagadas / cantidad_cuotas) * 100) if cantidad_cuotas else 0
+    estado = row["estado"]
+    estado_label = {
+        "activa": "En curso",
+        "finalizada": "Finalizada",
+        "cancelada": "Cancelada",
+    }.get(estado, estado)
+    if estado == "cancelada":
+        estado_cuota = "cancelada"
+        estado_cuota_texto = "Compra cancelada"
+    elif cuotas_pendientes == 0:
+        estado_cuota = "pagada"
+        estado_cuota_texto = "Compra completamente pagada"
+    elif proxima_cuota:
+        estado_cuota = "pendiente"
+        estado_cuota_texto = "Cuota pendiente"
+    else:
+        estado_cuota = "sin-estado"
+        estado_cuota_texto = "Estado de cuota no disponible"
+    ultima_cuota_pagada = None
+    for item in cuotas:
+        if item["estado"] == "pagada":
+            ultima_cuota_pagada = item
     return {
         **dict(row),
+        "tarjeta_nombre": tarjeta["nombre"] if tarjeta else "",
         "monto_original_fmt": formato_moneda_ar(monto),
         "valor_cuota_fmt": formato_moneda_ar(cuota),
+        "cuota_actual_importe_centavos": cuota_actual_importe,
+        "cuota_actual_importe_fmt": formato_moneda_ar(cuota_actual_importe),
         "total_financiado_fmt": formato_moneda_ar(total_fin),
         "diferencia_fmt": formato_moneda_ar(diferencia),
         "fecha_compra_fmt": fecha_para_mostrar(row["fecha_compra"]),
+        "fecha_compra_larga": fecha_larga_para_mostrar(row["fecha_compra"]),
         "proximo_vencimiento_fmt": fecha_para_mostrar(row["proximo_vencimiento"]),
-        "total_pendiente_fmt": formato_moneda_ar(int(row["total_pendiente_centavos"] or 0)),
-        "cuotas_pagadas": int(row["cuotas_pagadas"] or 0),
-        "cuotas_pendientes": int(row["cuotas_pendientes"] or 0),
-        "cuota_actual": int(row["cuota_actual"] or 0),
+        "proximo_vencimiento_larga": fecha_larga_para_mostrar(row["proximo_vencimiento"], "Sin proximo vencimiento"),
+        "total_pendiente_fmt": formato_moneda_ar(saldo_pendiente),
+        "monto_pagado_centavos": monto_pagado,
+        "monto_pagado_fmt": formato_moneda_ar(monto_pagado),
+        "saldo_pendiente_centavos": saldo_pendiente,
+        "saldo_pendiente_fmt": formato_moneda_ar(saldo_pendiente),
+        "cuotas_pagadas": cuotas_pagadas,
+        "cuotas_pendientes": cuotas_pendientes,
+        "cuotas_restantes": cuotas_pendientes,
+        "cuota_actual": cuota_actual,
+        "proxima_cuota": proxima_cuota,
+        "proxima_cuota_label": (
+            f"Cuota {int(proxima_cuota['numero_cuota'])} de {int(proxima_cuota['cantidad_total_cuotas'])}"
+            if proxima_cuota else "Sin cuotas pendientes"
+        ),
+        "ultima_cuota_pagada": ultima_cuota_pagada,
+        "ultima_cuota_pagada_label": (
+            f"Cuota {int(ultima_cuota_pagada['numero_cuota'])} de {int(ultima_cuota_pagada['cantidad_total_cuotas'])}"
+            if ultima_cuota_pagada else "Sin pagos registrados"
+        ),
+        "ultima_fecha_pago_larga": fecha_larga_para_mostrar(ultima_cuota_pagada["fecha_pago"], "Sin pagos registrados") if ultima_cuota_pagada else "Sin pagos registrados",
+        "estado_label": estado_label,
+        "estado_cuota": estado_cuota,
+        "estado_cuota_texto": estado_cuota_texto,
+        "progreso_pct": progreso_pct,
+        "progreso_texto": f"{cuotas_pagadas} de {cantidad_cuotas} cuotas pagadas",
+        "cuotas_relacion_inconsistente": (cuotas_pagadas + cuotas_pendientes) != cantidad_cuotas,
     }
 
 
+def periodos_pendientes_suscripcion(conn, row, fecha_limite=None):
+    if not conn or row["estado"] == "cancelada":
+        return []
+    fecha_proximo = normalizar_fecha(row["fecha_proximo_cobro"])
+    if not es_fecha_iso_valida(fecha_proximo):
+        return []
+    limite = normalizar_fecha(fecha_limite or date.today().isoformat())
+    if row["estado"] == "suspendida":
+        fecha_suspension = normalizar_fecha(row["fecha_suspension"])
+        if es_fecha_iso_valida(fecha_suspension) and fecha_suspension < limite:
+            limite = fecha_suspension
+    if not es_fecha_iso_valida(limite) or fecha_proximo > limite:
+        return []
+
+    pendientes = []
+    actual = fecha_proximo
+    while actual <= limite:
+        periodo = actual[:7]
+        monto_centavos = monto_suscripcion_para_periodo(conn, row, periodo)
+        pendientes.append({
+            "periodo": periodo,
+            "periodo_fmt": periodo_para_mostrar(periodo),
+            "monto_centavos": monto_centavos,
+            "monto_fmt": formato_moneda_ar(monto_centavos),
+        })
+        actual = sumar_meses(actual, 1)
+    return pendientes
+
+
 def presentar_suscripcion(row, conn=None):
-    periodo_pendiente = row["fecha_proximo_cobro"][:7] if row["fecha_proximo_cobro"] else ""
+    fecha_proximo = normalizar_fecha(row["fecha_proximo_cobro"])
+    periodo_pendiente = fecha_proximo[:7] if es_fecha_iso_valida(fecha_proximo) else ""
     monto_proximo = int(row["monto_centavos"] or 0)
     if conn and periodo_pendiente:
         monto_proximo = monto_suscripcion_para_periodo(conn, row, periodo_pendiente)
-    puede_pagar = row["estado"] == "activa"
+    periodo_actual = date.today().strftime("%Y-%m")
+    periodo_pagable = bool(periodo_pendiente) and periodo_pendiente <= periodo_actual
+    puede_pagar = row["estado"] == "activa" and periodo_pagable
     if row["estado"] == "suspendida" and row["fecha_suspension"] and row["fecha_proximo_cobro"]:
-        puede_pagar = row["fecha_proximo_cobro"] <= row["fecha_suspension"]
+        puede_pagar = periodo_pagable and row["fecha_proximo_cobro"] <= row["fecha_suspension"]
+    mensaje_pago = ""
+    if row["estado"] == "activa" and periodo_pendiente and not periodo_pagable:
+        mensaje_pago = "Periodo actual pagado"
+    periodos_pendientes = periodos_pendientes_suscripcion(conn, row)
+    cantidad_pendiente = len(periodos_pendientes)
+    total_pendiente = sum(p["monto_centavos"] for p in periodos_pendientes)
+    if row["estado"] == "cancelada":
+        estado_periodo = "cancelada"
+        estado_periodo_texto = "Suscripcion cancelada"
+    elif row["estado"] == "suspendida" and not puede_pagar:
+        estado_periodo = "suspendida"
+        estado_periodo_texto = "Suscripcion suspendida"
+    elif puede_pagar:
+        estado_periodo = "pendiente"
+        estado_periodo_texto = "Periodo pendiente"
+    elif row["estado"] == "activa":
+        estado_periodo = "pagado"
+        estado_periodo_texto = "Periodo actual pagado"
+    else:
+        estado_periodo = "sin-estado"
+        estado_periodo_texto = "Estado del periodo no disponible"
+    fecha_proximo_larga = fecha_larga_para_mostrar(row["fecha_proximo_cobro"], "Sin proximo pago programado")
+    periodo_pendiente_fmt = periodo_para_mostrar(periodo_pendiente, "Sin periodo pendiente")
+    if row["estado"] == "cancelada":
+        fecha_proximo_larga = "Sin proximo pago programado"
+        periodo_pendiente_fmt = "Sin periodo pendiente"
+    elif row["estado"] == "suspendida" and not puede_pagar:
+        fecha_proximo_larga = "Cobros pausados"
     return {
         **dict(row),
         "monto_fmt": formato_moneda_ar(int(row["monto_centavos"] or 0)),
         "monto_proximo_centavos": monto_proximo,
         "monto_proximo_fmt": formato_moneda_ar(monto_proximo),
         "fecha_inicio_fmt": fecha_para_mostrar(row["fecha_inicio"]),
+        "fecha_inicio_larga": fecha_larga_para_mostrar(row["fecha_inicio"]),
         "fecha_proximo_cobro_fmt": fecha_para_mostrar(row["fecha_proximo_cobro"]),
+        "fecha_proximo_cobro_larga": fecha_proximo_larga,
         "fecha_suspension_fmt": fecha_para_mostrar(row["fecha_suspension"]),
+        "fecha_suspension_larga": fecha_larga_para_mostrar(row["fecha_suspension"]),
         "fecha_cancelacion_fmt": fecha_para_mostrar(row["fecha_cancelacion"]),
+        "fecha_cancelacion_larga": fecha_larga_para_mostrar(row["fecha_cancelacion"]),
         "ultimo_cobro_fmt": fecha_para_mostrar(row["ultimo_cobro"]),
+        "ultimo_cobro_larga": fecha_larga_para_mostrar(row["ultimo_cobro"], "Sin pagos registrados"),
         "cobros_generados": int(row["cobros_generados"] or 0),
         "periodo_pendiente": periodo_pendiente,
+        "periodo_pendiente_fmt": periodo_pendiente_fmt,
+        "periodo_pendiente_mes": nombre_mes_periodo(periodo_pendiente),
+        "ultimo_periodo_cobrado_fmt": periodo_para_mostrar(row["ultimo_periodo_cobrado"], "Sin pagos registrados"),
         "periodo_desde_defecto": periodo_pendiente,
+        "estado_periodo": estado_periodo,
+        "estado_periodo_texto": estado_periodo_texto,
+        "periodos_pendientes": periodos_pendientes,
+        "cantidad_periodos_pendientes": cantidad_pendiente,
+        "total_pendiente_suscripcion_centavos": total_pendiente,
+        "total_pendiente_suscripcion_fmt": formato_moneda_ar(total_pendiente),
+        "mostrar_total_pendiente": cantidad_pendiente > 1,
         "puede_editar_monto": row["estado"] in {"activa", "suspendida"},
         "puede_pagar": puede_pagar,
+        "mensaje_pago": mensaje_pago,
         "puede_suspender": row["estado"] == "activa",
         "puede_reactivar": row["estado"] == "suspendida",
         "puede_cancelar": row["estado"] in {"activa", "suspendida"},
@@ -704,7 +1022,9 @@ def presentar_cuota(row):
         **dict(row),
         "importe_fmt": formato_moneda_ar(int(row["importe_centavos"] or 0)),
         "fecha_vencimiento_fmt": fecha_para_mostrar(row["fecha_vencimiento"]),
+        "fecha_vencimiento_larga": fecha_larga_para_mostrar(row["fecha_vencimiento"], "Dato no disponible"),
         "fecha_pago_fmt": fecha_para_mostrar(row["fecha_pago"]),
+        "fecha_pago_larga": fecha_larga_para_mostrar(row["fecha_pago"], "Sin pagos registrados"),
     }
 
 

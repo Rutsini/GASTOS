@@ -166,23 +166,61 @@ def insertar_cuota_si_falta(conn, compra_id, numero, total, importe, vencimiento
     """, (int(compra_id), int(numero), int(total), int(importe), vencimiento))
 
 
-def obtener_resumen_tarjeta(conn, tarjeta_id):
+def obtener_resumen_tarjeta(conn, tarjeta_id, periodo=None):
     return conn.execute("""
         SELECT
             t.*,
-            SUM(CASE WHEN c.estado = 'activa' THEN 1 ELSE 0 END) AS compras_activas,
-            SUM(CASE WHEN c.estado = 'finalizada' THEN 1 ELSE 0 END) AS planes_finalizados,
-            SUM(CASE WHEN q.estado = 'pendiente' THEN 1 ELSE 0 END) AS cuotas_pendientes,
-            SUM(CASE WHEN q.estado = 'pendiente' THEN q.importe_centavos ELSE 0 END) AS pendiente_centavos,
-            SUM(CASE WHEN q.estado = 'pagada' THEN q.importe_centavos ELSE 0 END) AS pagado_centavos,
-            SUM(CASE WHEN q.estado = 'pendiente' AND substr(q.fecha_vencimiento, 1, 7) = strftime('%Y-%m', 'now') THEN q.importe_centavos ELSE 0 END) AS periodo_actual_centavos,
-            MIN(CASE WHEN q.estado = 'pendiente' THEN q.fecha_vencimiento ELSE NULL END) AS proximo_vencimiento
+            COALESCE(compras.compras_activas, 0) AS compras_activas,
+            COALESCE(compras.monto_total_tarjeta_centavos, 0) AS monto_total_tarjeta_centavos,
+            COALESCE(cuotas.pendiente_centavos, 0) AS pendiente_centavos,
+            COALESCE(cuotas.periodo_actual_centavos, 0) AS periodo_actual_centavos
         FROM tarjetas t
-        LEFT JOIN compras_tarjeta c ON c.tarjeta_id = t.id
-        LEFT JOIN cuotas_tarjeta q ON q.compra_tarjeta_id = c.id
+        LEFT JOIN (
+            SELECT
+                tarjeta_id,
+                SUM(CASE WHEN estado = 'activa' THEN 1 ELSE 0 END) AS compras_activas,
+                SUM(CASE WHEN estado = 'activa' THEN total_financiado_centavos ELSE 0 END) AS monto_total_tarjeta_centavos
+            FROM compras_tarjeta
+            GROUP BY tarjeta_id
+        ) compras ON compras.tarjeta_id = t.id
+        LEFT JOIN (
+            SELECT
+                c.tarjeta_id,
+                SUM(CASE WHEN q.estado = 'pendiente' THEN q.importe_centavos ELSE 0 END) AS pendiente_centavos,
+                SUM(CASE WHEN q.estado = 'pendiente' AND substr(q.fecha_vencimiento, 1, 7) = ? THEN q.importe_centavos ELSE 0 END) AS periodo_actual_centavos
+            FROM compras_tarjeta c
+            JOIN cuotas_tarjeta q ON q.compra_tarjeta_id = c.id
+            WHERE c.estado != 'cancelada'
+            GROUP BY c.tarjeta_id
+        ) cuotas ON cuotas.tarjeta_id = t.id
         WHERE t.id = ?
-        GROUP BY t.id
-    """, (int(tarjeta_id),)).fetchone()
+    """, (periodo, int(tarjeta_id))).fetchone()
+
+
+def total_cuotas_periodo_tarjeta(conn, tarjeta_id, periodo):
+    row = conn.execute("""
+        SELECT SUM(q.importe_centavos) AS total
+        FROM cuotas_tarjeta q
+        JOIN compras_tarjeta c ON c.id = q.compra_tarjeta_id
+        WHERE c.tarjeta_id = ?
+          AND c.estado != 'cancelada'
+          AND q.estado IN ('pendiente', 'pagada')
+          AND substr(q.fecha_vencimiento, 1, 7) = ?
+    """, (int(tarjeta_id), periodo)).fetchone()
+    return int(row["total"] or 0)
+
+
+def cobros_suscripciones_periodo_tarjeta(conn, tarjeta_id, periodo):
+    return conn.execute("""
+        SELECT
+            c.suscripcion_id,
+            c.periodo,
+            c.monto_centavos
+        FROM tarjeta_suscripcion_cobros c
+        JOIN tarjeta_suscripciones s ON s.id = c.suscripcion_id
+        WHERE s.tarjeta_id = ?
+          AND c.periodo = ?
+    """, (int(tarjeta_id), periodo)).fetchall()
 
 
 def listar_compras_tarjeta(conn, tarjeta_id, filtros=None):
@@ -389,7 +427,7 @@ def obtener_cobro_suscripcion_periodo(conn, suscripcion_id, periodo):
 def crear_movimiento_cobro_suscripcion(conn, suscripcion, fecha_pago, periodo, monto_centavos, tx_hash):
     descripcion = f"Suscripcion - {suscripcion['nombre']}"
     cur = conn.execute("""
-        INSERT OR IGNORE INTO movimientos (
+        INSERT INTO movimientos (
             tx_hash, archivo, linea, fecha, descripcion, monto_centavos, monto_raw,
             categoria, subcategoria_id, clasificacion_origen, clasificacion_bloqueada,
             tarjeta_id, suscripcion_tarjeta_id, generado_desde_tarjeta, anulado
@@ -406,10 +444,7 @@ def crear_movimiento_cobro_suscripcion(conn, suscripcion, fecha_pago, periodo, m
         suscripcion["tarjeta_id"],
         suscripcion["id"],
     ))
-    if cur.lastrowid:
-        return cur.lastrowid
-    row = conn.execute("SELECT id FROM movimientos WHERE tx_hash = ?", (tx_hash,)).fetchone()
-    return row["id"] if row else None
+    return cur.lastrowid
 
 
 def registrar_cobro_suscripcion(conn, suscripcion_id, movimiento_id, periodo, fecha_cobro, monto_centavos, fecha_pago, origen):

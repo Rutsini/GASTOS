@@ -72,15 +72,181 @@
         element.addEventListener("click", function (event) {
             if (!window.confirm(element.getAttribute("data-confirm"))) {
                 event.preventDefault();
+            }
+        });
+    });
+
+    document.querySelectorAll("[data-dialog-target]").forEach(function (button) {
+        button.addEventListener("click", function () {
+            const dialog = document.getElementById(button.getAttribute("data-dialog-target"));
+            if (!dialog) {
                 return;
             }
-            const form = element.closest("form");
-            if (form) {
-                window.setTimeout(function () {
-                    form.querySelectorAll("button").forEach(function (button) {
-                        button.disabled = true;
-                    });
-                }, 0);
+            if (typeof dialog.showModal === "function") {
+                dialog.showModal();
+            } else {
+                dialog.setAttribute("open", "");
+            }
+        });
+    });
+
+    document.querySelectorAll(".subscription-dialog, .entity-dialog").forEach(function (dialog) {
+        dialog.addEventListener("click", function (event) {
+            if (event.target === dialog) {
+                if (typeof dialog.close === "function") {
+                    dialog.close();
+                } else {
+                    dialog.removeAttribute("open");
+                }
+            }
+        });
+        dialog.querySelectorAll("[data-dialog-close]").forEach(function (button) {
+            button.addEventListener("click", function () {
+                if (typeof dialog.close === "function") {
+                    dialog.close();
+                } else {
+                    dialog.removeAttribute("open");
+                }
+            });
+        });
+    });
+
+    function setupStatusFilter(filter) {
+        const name = filter.getAttribute("data-status-filter");
+        const list = document.querySelector('[data-status-filter-list="' + name + '"]');
+        if (!list) {
+            return;
+        }
+        const items = Array.from(list.querySelectorAll("[data-status-filter-item]"));
+        const buttons = Array.from(filter.querySelectorAll("[data-status-filter-option]"));
+        const categorySelect = filter.querySelector('[data-category-filter="' + name + '"]');
+        const empty = document.querySelector('[data-status-filter-empty="' + name + '"]');
+        const statusStorageKey = "status-filter-" + name;
+        const categoryStorageKey = "category-filter-" + name;
+        const validStatuses = new Set(buttons.map(function (button) {
+            return button.getAttribute("data-status-filter-option");
+        }));
+        const fallback = filter.getAttribute("data-default-status") || "all";
+        let selectedStatus = sessionStorage.getItem(statusStorageKey) || fallback;
+        let selectedCategory = sessionStorage.getItem(categoryStorageKey) || "all";
+        if (!validStatuses.has(selectedStatus)) {
+            selectedStatus = fallback;
+        }
+        if (items.length === 0) {
+            selectedStatus = "all";
+            selectedCategory = "all";
+        }
+        if (categorySelect) {
+            const hasUncategorized = items.some(function (item) {
+                return !(item.getAttribute("data-category") || "").trim();
+            });
+            const uncategorizedOption = categorySelect.querySelector("[data-uncategorized-option]");
+            if (uncategorizedOption) {
+                uncategorizedOption.hidden = !hasUncategorized;
+            }
+            const validCategories = new Set(Array.from(categorySelect.options).filter(function (option) {
+                return !option.hidden;
+            }).map(function (option) {
+                return option.value;
+            }));
+            if (!validCategories.has(selectedCategory)) {
+                selectedCategory = "all";
+            }
+            categorySelect.value = selectedCategory;
+        }
+
+        function updateCounts() {
+            const counts = { all: items.length };
+            items.forEach(function (item) {
+                const status = item.getAttribute("data-status") || "";
+                counts[status] = (counts[status] || 0) + 1;
+            });
+            filter.querySelectorAll("[data-status-count]").forEach(function (counter) {
+                const status = counter.getAttribute("data-status-count");
+                counter.textContent = counts[status] || 0;
+            });
+        }
+
+        function categoryLabel() {
+            if (!categorySelect || selectedCategory === "all") {
+                return "";
+            }
+            const option = categorySelect.selectedOptions[0];
+            return option ? option.textContent.trim() : "";
+        }
+
+        function selectedButton() {
+            return buttons.find(function (button) {
+                return button.getAttribute("data-status-filter-option") === selectedStatus;
+            });
+        }
+
+        function buildEmptyMessage() {
+            const category = categoryLabel();
+            const button = selectedButton();
+            if (category) {
+                const entity = filter.getAttribute("data-entity-label") || "resultados";
+                const statusText = selectedStatus === "all" ? "" : (button ? button.firstChild.nodeValue.trim().toLowerCase() : "");
+                return "No hay " + entity + (statusText ? " " + statusText : "") + " en la categoria " + category + ".";
+            }
+            return (button && button.getAttribute("data-empty-message")) || "No hay resultados para este filtro.";
+        }
+
+        function apply() {
+            sessionStorage.setItem(statusStorageKey, selectedStatus);
+            sessionStorage.setItem(categoryStorageKey, selectedCategory);
+            let visible = 0;
+            items.forEach(function (item) {
+                const statusMatches = selectedStatus === "all" || item.getAttribute("data-status") === selectedStatus;
+                const itemCategory = (item.getAttribute("data-category") || "").trim();
+                const categoryMatches = selectedCategory === "all" ||
+                    (selectedCategory === "__uncategorized" ? !itemCategory : itemCategory === selectedCategory);
+                const visibleItem = statusMatches && categoryMatches;
+                item.hidden = !visibleItem;
+                if (visibleItem) {
+                    visible += 1;
+                }
+            });
+            buttons.forEach(function (button) {
+                button.setAttribute("aria-pressed", button.getAttribute("data-status-filter-option") === selectedStatus ? "true" : "false");
+            });
+            if (empty) {
+                empty.hidden = visible !== 0;
+                empty.textContent = buildEmptyMessage();
+            }
+        }
+
+        buttons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                selectedStatus = button.getAttribute("data-status-filter-option");
+                apply();
+            });
+        });
+        if (categorySelect) {
+            categorySelect.addEventListener("change", function () {
+                selectedCategory = categorySelect.value || "all";
+                apply();
+            });
+        }
+        updateCounts();
+        apply();
+    }
+
+    document.querySelectorAll("[data-status-filter]").forEach(setupStatusFilter);
+
+    document.querySelectorAll("form").forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+            if (form.dataset.submitting === "1") {
+                event.preventDefault();
+                return;
+            }
+            form.dataset.submitting = "1";
+            const submitter = event.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+            form.querySelectorAll("button").forEach(function (button) {
+                button.disabled = true;
+            });
+            if (submitter && submitter.tagName === "BUTTON") {
+                submitter.textContent = submitter.getAttribute("data-loading-text") || "Procesando...";
             }
         });
     });

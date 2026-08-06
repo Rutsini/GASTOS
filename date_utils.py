@@ -2,6 +2,21 @@ from datetime import date, datetime
 
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y")
+MESES_ES = (
+    "",
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
 
 
 def normalizar_fecha(valor, default_year=None):
@@ -47,6 +62,17 @@ def fecha_para_mostrar(valor):
         return valor or ""
 
 
+def fecha_larga_para_mostrar(valor, vacio="Sin fecha registrada"):
+    iso = normalizar_fecha(valor)
+    if not iso:
+        return vacio
+    try:
+        fecha = datetime.strptime(iso, "%Y-%m-%d").date()
+    except ValueError:
+        return "Fecha invalida"
+    return f"{fecha.day} de {MESES_ES[fecha.month]} de {fecha.year}"
+
+
 def es_fecha_iso_valida(valor):
     try:
         datetime.strptime(valor or "", "%Y-%m-%d")
@@ -60,6 +86,45 @@ def mes_de_fecha(valor):
     if es_fecha_iso_valida(iso):
         return iso[:7]
     return None
+
+
+def periodo_para_mostrar(periodo, vacio="Sin periodo registrado"):
+    texto = (periodo or "").strip()
+    if len(texto) != 7 or texto[4] != "-":
+        return vacio if not texto else "Periodo invalido"
+    year, month = texto.split("-")
+    if not year.isdigit() or not month.isdigit():
+        return "Periodo invalido"
+    month_number = int(month)
+    if month_number < 1 or month_number > 12:
+        return "Periodo invalido"
+    return f"{MESES_ES[month_number].capitalize()} {year}"
+
+
+def periodo_corto_para_mostrar(periodo, vacio="Sin periodo"):
+    texto = (periodo or "").strip()
+    if len(texto) != 7 or texto[4] != "-":
+        return vacio if not texto else "Periodo invalido"
+    year, month = texto.split("-")
+    if not year.isdigit() or not month.isdigit():
+        return "Periodo invalido"
+    month_number = int(month)
+    if month_number < 1 or month_number > 12:
+        return "Periodo invalido"
+    return f"{MESES_ES[month_number][:3].capitalize()} {year}"
+
+
+def nombre_mes_periodo(periodo, vacio="periodo"):
+    texto = (periodo or "").strip()
+    if len(texto) != 7 or texto[4] != "-":
+        return vacio
+    month = texto[5:]
+    if not month.isdigit():
+        return vacio
+    month_number = int(month)
+    if month_number < 1 or month_number > 12:
+        return vacio
+    return MESES_ES[month_number]
 
 
 def fecha_iso_sql(columna="fecha"):
