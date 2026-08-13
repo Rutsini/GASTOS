@@ -157,6 +157,162 @@ def obtener_compra(conn, compra_id):
     """, (int(compra_id),)).fetchone()
 
 
+def cambiar_estado_compra(conn, compra_id, estado):
+    conn.execute(
+        f"UPDATE compras_tarjeta SET estado = ?, updated_at = {now_sql()} WHERE id = ?",
+        (estado, int(compra_id)),
+    )
+
+
+def impacto_eliminar_compra(conn, compra_id):
+    row = conn.execute("""
+        SELECT
+            (SELECT COUNT(*) FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?) AS cuotas_total,
+            (SELECT COUNT(*) FROM cuotas_tarjeta WHERE compra_tarjeta_id = ? AND estado = 'pagada') AS cuotas_pagadas,
+            (SELECT COUNT(*) FROM historial_pagos_tarjeta WHERE compra_tarjeta_id = ?) AS historial_total,
+            (
+                SELECT COUNT(*)
+                FROM movimientos
+                WHERE generado_desde_tarjeta = 1
+                  AND (
+                      compra_tarjeta_id = ?
+                      OR cuota_tarjeta_id IN (
+                          SELECT id FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?
+                      )
+                  )
+            ) AS movimientos_automaticos,
+            (
+                SELECT COUNT(*)
+                FROM movimientos
+                WHERE COALESCE(generado_desde_tarjeta, 0) != 1
+                  AND (
+                      compra_tarjeta_id = ?
+                      OR cuota_tarjeta_id IN (
+                          SELECT id FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?
+                      )
+                  )
+            ) AS movimientos_no_automaticos
+    """, (
+        int(compra_id),
+        int(compra_id),
+        int(compra_id),
+        int(compra_id),
+        int(compra_id),
+        int(compra_id),
+        int(compra_id),
+    )).fetchone()
+    return dict(row)
+
+
+def movimiento_ids_compra(conn, compra_id):
+    return [
+        int(row["id"])
+        for row in conn.execute("""
+            SELECT id
+            FROM movimientos
+            WHERE generado_desde_tarjeta = 1
+              AND (
+                  compra_tarjeta_id = ?
+                  OR cuota_tarjeta_id IN (
+                      SELECT id FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?
+                  )
+              )
+            ORDER BY id ASC
+        """, (int(compra_id), int(compra_id))).fetchall()
+    ]
+
+
+def eliminar_historial_compra(conn, compra_id):
+    cur = conn.execute(
+        "DELETE FROM historial_pagos_tarjeta WHERE compra_tarjeta_id = ?",
+        (int(compra_id),),
+    )
+    return cur.rowcount
+
+
+def eliminar_cuotas_compra(conn, compra_id):
+    cur = conn.execute(
+        "DELETE FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?",
+        (int(compra_id),),
+    )
+    return cur.rowcount
+
+
+def eliminar_compra(conn, compra_id):
+    cur = conn.execute("DELETE FROM compras_tarjeta WHERE id = ?", (int(compra_id),))
+    return cur.rowcount
+
+
+def impacto_eliminar_suscripcion(conn, suscripcion_id):
+    row = conn.execute("""
+        SELECT
+            (SELECT COUNT(*) FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?) AS cobros_total,
+            (SELECT COUNT(*) FROM tarjeta_suscripcion_historial_montos WHERE suscripcion_id = ?) AS historial_montos_total,
+            (
+                SELECT COUNT(*)
+                FROM movimientos
+                WHERE generado_desde_tarjeta = 1
+                  AND suscripcion_tarjeta_id = ?
+            ) AS movimientos_automaticos,
+            (
+                SELECT COUNT(*)
+                FROM movimientos
+                WHERE COALESCE(generado_desde_tarjeta, 0) != 1
+                  AND suscripcion_tarjeta_id = ?
+            ) AS movimientos_no_automaticos
+    """, (int(suscripcion_id), int(suscripcion_id), int(suscripcion_id), int(suscripcion_id))).fetchone()
+    return dict(row)
+
+
+def movimiento_ids_suscripcion(conn, suscripcion_id):
+    return [
+        int(row["id"])
+        for row in conn.execute("""
+            SELECT id
+            FROM movimientos
+            WHERE generado_desde_tarjeta = 1
+              AND suscripcion_tarjeta_id = ?
+            ORDER BY id ASC
+        """, (int(suscripcion_id),)).fetchall()
+    ]
+
+
+def eliminar_cobros_suscripcion(conn, suscripcion_id):
+    cur = conn.execute(
+        "DELETE FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?",
+        (int(suscripcion_id),),
+    )
+    return cur.rowcount
+
+
+def eliminar_historial_montos_suscripcion(conn, suscripcion_id):
+    cur = conn.execute(
+        "DELETE FROM tarjeta_suscripcion_historial_montos WHERE suscripcion_id = ?",
+        (int(suscripcion_id),),
+    )
+    return cur.rowcount
+
+
+def eliminar_suscripcion(conn, suscripcion_id):
+    cur = conn.execute("DELETE FROM tarjeta_suscripciones WHERE id = ?", (int(suscripcion_id),))
+    return cur.rowcount
+
+
+def eliminar_movimientos_tarjeta_por_ids(conn, movimiento_ids):
+    if not movimiento_ids:
+        return 0
+    placeholders = ",".join("?" for _ in movimiento_ids)
+    cur = conn.execute(
+        f"DELETE FROM movimientos WHERE id IN ({placeholders}) AND generado_desde_tarjeta = 1",
+        tuple(int(mov_id) for mov_id in movimiento_ids),
+    )
+    return cur.rowcount
+
+
+def foreign_key_check(conn):
+    return conn.execute("PRAGMA foreign_key_check").fetchall()
+
+
 def insertar_cuota_si_falta(conn, compra_id, numero, total, importe, vencimiento):
     conn.execute("""
         INSERT OR IGNORE INTO cuotas_tarjeta (

@@ -288,6 +288,118 @@ def crear_pago_tarjeta(tarjeta_id, form):
     return "compra", crear_compra_en_cuotas(tarjeta_id, form)
 
 
+def _normalizar_impacto_eliminacion(impacto):
+    return {key: int(value or 0) for key, value in (impacto or {}).items()}
+
+
+def cambiar_estado_compra(compra_id, nuevo_estado):
+    if nuevo_estado not in ESTADOS_COMPRA:
+        raise TarjetasError("El estado de compra es invalido.")
+    if nuevo_estado != "cancelada":
+        raise TarjetasError("Solo se puede cancelar una compra desde esta accion.")
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        compra = repo.obtener_compra(conn, compra_id)
+        if not compra:
+            raise TarjetasError("La compra no existe.")
+        if compra["estado"] == "cancelada":
+            raise TarjetasError("La compra ya esta cancelada.")
+        if compra["estado"] != "activa":
+            raise TarjetasError("Solo se pueden cancelar compras en curso.")
+        repo.cambiar_estado_compra(conn, compra_id, nuevo_estado)
+        conn.commit()
+    return int(compra["tarjeta_id"])
+
+
+def impacto_eliminar_compra(compra_id):
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        compra = repo.obtener_compra(conn, compra_id)
+        if not compra:
+            raise TarjetasError("La compra no existe.")
+        impacto = _normalizar_impacto_eliminacion(repo.impacto_eliminar_compra(conn, compra_id))
+    return impacto
+
+
+def impacto_eliminar_suscripcion(suscripcion_id):
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        suscripcion = repo.obtener_suscripcion(conn, suscripcion_id)
+        if not suscripcion:
+            raise TarjetasError("La suscripcion no existe.")
+        impacto = _normalizar_impacto_eliminacion(repo.impacto_eliminar_suscripcion(conn, suscripcion_id))
+    return impacto
+
+
+def eliminar_compra(compra_id):
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        compra = repo.obtener_compra(conn, compra_id)
+        if not compra:
+            raise TarjetasError("La compra no existe.")
+        impacto = _normalizar_impacto_eliminacion(repo.impacto_eliminar_compra(conn, compra_id))
+        if impacto.get("movimientos_no_automaticos", 0) > 0:
+            raise TarjetasError("No se puede eliminar la compra porque tiene movimientos vinculados que no fueron generados automaticamente.")
+        movimiento_ids = repo.movimiento_ids_compra(conn, compra_id)
+
+        historial_eliminado = repo.eliminar_historial_compra(conn, compra_id)
+        cuotas_eliminadas = repo.eliminar_cuotas_compra(conn, compra_id)
+        movimientos_eliminados = repo.eliminar_movimientos_tarjeta_por_ids(conn, movimiento_ids)
+        compra_eliminada = repo.eliminar_compra(conn, compra_id)
+        if compra_eliminada != 1:
+            raise TarjetasError("No se pudo eliminar la compra.")
+        fk_errors = repo.foreign_key_check(conn)
+        if fk_errors:
+            raise TarjetasError("La eliminacion dejaria relaciones invalidas en la base.")
+        conn.commit()
+
+    return {
+        "tarjeta_id": int(compra["tarjeta_id"]),
+        "compra_id": int(compra_id),
+        "descripcion": compra["descripcion"],
+        "impacto": impacto,
+        "cuotas_eliminadas": cuotas_eliminadas,
+        "historial_eliminado": historial_eliminado,
+        "movimientos_eliminados": movimientos_eliminados,
+    }
+
+
+def eliminar_suscripcion(suscripcion_id):
+    asegurar_modulo_tarjetas()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        suscripcion = repo.obtener_suscripcion(conn, suscripcion_id)
+        if not suscripcion:
+            raise TarjetasError("La suscripcion no existe.")
+        impacto = _normalizar_impacto_eliminacion(repo.impacto_eliminar_suscripcion(conn, suscripcion_id))
+        if impacto.get("movimientos_no_automaticos", 0) > 0:
+            raise TarjetasError("No se puede eliminar la suscripcion porque tiene movimientos vinculados que no fueron generados automaticamente.")
+        movimiento_ids = repo.movimiento_ids_suscripcion(conn, suscripcion_id)
+
+        cobros_eliminados = repo.eliminar_cobros_suscripcion(conn, suscripcion_id)
+        historial_montos_eliminado = repo.eliminar_historial_montos_suscripcion(conn, suscripcion_id)
+        movimientos_eliminados = repo.eliminar_movimientos_tarjeta_por_ids(conn, movimiento_ids)
+        suscripcion_eliminada = repo.eliminar_suscripcion(conn, suscripcion_id)
+        if suscripcion_eliminada != 1:
+            raise TarjetasError("No se pudo eliminar la suscripcion.")
+        fk_errors = repo.foreign_key_check(conn)
+        if fk_errors:
+            raise TarjetasError("La eliminacion dejaria relaciones invalidas en la base.")
+        conn.commit()
+
+    return {
+        "tarjeta_id": int(suscripcion["tarjeta_id"]),
+        "suscripcion_id": int(suscripcion_id),
+        "nombre": suscripcion["nombre"],
+        "impacto": impacto,
+        "cobros_eliminados": cobros_eliminados,
+        "historial_montos_eliminado": historial_montos_eliminado,
+        "movimientos_eliminados": movimientos_eliminados,
+    }
+
+
 def generar_cuotas(conn, compra_id, cantidad_cuotas, importes, primer_vencimiento):
     for index, importe in enumerate(importes, start=1):
         vencimiento = sumar_meses(primer_vencimiento, index - 1)
@@ -319,7 +431,17 @@ def obtener_detalle_tarjeta(tarjeta_id, filtros=None, periodo=None):
             if cuota["compra_tarjeta_id"] in compra_ids:
                 cuotas_por_compra[cuota["compra_tarjeta_id"]].append(presentar_cuota(cuota))
         suscripciones = [presentar_suscripcion(row, conn) for row in suscripciones_rows]
-        compras = [presentar_compra(row, cuotas_por_compra.get(row["id"], []), tarjeta) for row in compras_rows]
+        compras = []
+        for row in compras_rows:
+            compra = presentar_compra(row, cuotas_por_compra.get(row["id"], []), tarjeta)
+            impacto = _normalizar_impacto_eliminacion(repo.impacto_eliminar_compra(conn, row["id"]))
+            compra["impacto_eliminacion"] = impacto
+            compra["tiene_relaciones_eliminacion"] = (
+                impacto.get("cuotas_pagadas", 0) > 0
+                or impacto.get("historial_total", 0) > 0
+                or impacto.get("movimientos_automaticos", 0) > 0
+            )
+            compras.append(compra)
         proyeccion_cuotas = proyectar_cuotas_tarjeta(compras, cuotas_por_compra)
         total_periodo = calcular_total_periodo_tarjeta(conn, tarjeta_id, periodo, suscripciones_rows)
     return {
@@ -980,6 +1102,9 @@ def presentar_suscripcion(row, conn=None):
         periodo_pendiente_fmt = "Sin periodo pendiente"
     elif row["estado"] == "suspendida" and not puede_pagar:
         fecha_proximo_larga = "Cobros pausados"
+    impacto_eliminacion = {}
+    if conn:
+        impacto_eliminacion = _normalizar_impacto_eliminacion(repo.impacto_eliminar_suscripcion(conn, row["id"]))
     return {
         **dict(row),
         "monto_fmt": formato_moneda_ar(int(row["monto_centavos"] or 0)),
@@ -1014,6 +1139,12 @@ def presentar_suscripcion(row, conn=None):
         "puede_suspender": row["estado"] == "activa",
         "puede_reactivar": row["estado"] == "suspendida",
         "puede_cancelar": row["estado"] in {"activa", "suspendida"},
+        "impacto_eliminacion": impacto_eliminacion,
+        "tiene_relaciones_eliminacion": (
+            impacto_eliminacion.get("cobros_total", 0) > 0
+            or impacto_eliminacion.get("historial_montos_total", 0) > 0
+            or impacto_eliminacion.get("movimientos_automaticos", 0) > 0
+        ),
     }
 
 

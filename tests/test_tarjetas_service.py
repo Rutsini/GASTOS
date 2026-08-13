@@ -699,6 +699,145 @@ class TarjetasServiceTest(unittest.TestCase):
         self.assertEqual(len(proyeccion["meses"]), 6)
         self.assertEqual([t["monto_centavos"] for t in proyeccion["totales"]], [0, 0, 0, 0, 0, 0])
 
+    def test_elimina_compra_sin_pagos_borra_compra_y_cuotas(self):
+        tarjeta_id = self._tarjeta()
+        compra_id = self._compra(tarjeta_id, cuotas="3", monto="300,00", descripcion="Compra erronea")
+
+        resultado = self.service.eliminar_compra(compra_id)
+
+        self.assertEqual(resultado["tarjeta_id"], tarjeta_id)
+        self.assertEqual(resultado["cuotas_eliminadas"], 3)
+        self.assertEqual(resultado["movimientos_eliminados"], 0)
+        with root_db.get_conn() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM compras_tarjeta WHERE id = ?", (compra_id,)).fetchone())
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS total FROM cuotas_tarjeta WHERE compra_tarjeta_id = ?", (compra_id,)).fetchone()["total"],
+                0,
+            )
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+        detalle = self.service.obtener_detalle_tarjeta(tarjeta_id, periodo="2026-07")
+        self.assertEqual(detalle["tarjeta"]["compras_activas"], 0)
+        self.assertEqual(detalle["tarjeta"]["pendiente_centavos"], 0)
+        self.assertFalse(detalle["proyeccion_cuotas"]["tiene_datos"])
+
+    def test_elimina_compra_con_pagos_borra_historial_y_movimientos_automaticos(self):
+        tarjeta_id = self._tarjeta()
+        compra_id = self._compra(tarjeta_id, cuotas="2", monto="200,00", descripcion="Notebook")
+        movimiento_id = self.service.pagar_cuota(compra_id=compra_id, fecha_pago="2026-07-15")
+        with root_db.get_conn() as conn:
+            conn.execute("""
+                INSERT INTO movimientos (
+                    tx_hash, archivo, linea, fecha, descripcion, monto_centavos, monto_raw,
+                    categoria, subcategoria_id, clasificacion_origen, clasificacion_bloqueada,
+                    tarjeta_id, generado_desde_tarjeta, anulado
+                )
+                VALUES ('manual-misma-notebook', 'manual', NULL, '2026-07-15', 'Notebook', -10000, '-100,00',
+                        'Electronica', ?, 'manual', 1, ?, 0, 0)
+            """, (self.subcategoria_id, tarjeta_id))
+            manual_id = conn.execute("SELECT id FROM movimientos WHERE tx_hash = 'manual-misma-notebook'").fetchone()["id"]
+            conn.commit()
+
+        resultado = self.service.eliminar_compra(compra_id)
+
+        self.assertEqual(resultado["movimientos_eliminados"], 1)
+        self.assertEqual(resultado["historial_eliminado"], 1)
+        with root_db.get_conn() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM movimientos WHERE id = ?", (movimiento_id,)).fetchone())
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM movimientos WHERE id = ?", (manual_id,)).fetchone())
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS total FROM historial_pagos_tarjeta WHERE compra_tarjeta_id = ?", (compra_id,)).fetchone()["total"],
+                0,
+            )
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_elimina_suscripcion_sin_pagos_borra_registro_principal(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, nombre="Suscripcion erronea")
+
+        resultado = self.service.eliminar_suscripcion(suscripcion_id)
+
+        self.assertEqual(resultado["tarjeta_id"], tarjeta_id)
+        self.assertEqual(resultado["cobros_eliminados"], 0)
+        with root_db.get_conn() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM tarjeta_suscripciones WHERE id = ?", (suscripcion_id,)).fetchone())
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+        detalle = self.service.obtener_detalle_tarjeta(tarjeta_id, periodo="2026-07")
+        self.assertEqual(detalle["suscripciones"], [])
+        self.assertEqual(detalle["total_periodo"]["total_suscripciones_periodo"], 0)
+
+    def test_elimina_suscripcion_con_cobros_borra_cobros_historial_montos_y_movimientos_automaticos(self):
+        tarjeta_id = self._tarjeta()
+        suscripcion_id = self._suscripcion(tarjeta_id, nombre="Netflix")
+        pago = self.service.pagar_suscripcion(suscripcion_id, "2026-07-05")
+        self.service.editar_monto_suscripcion(suscripcion_id, {"nuevo_monto": "1200,00"})
+        with root_db.get_conn() as conn:
+            conn.execute("""
+                INSERT INTO movimientos (
+                    tx_hash, archivo, linea, fecha, descripcion, monto_centavos, monto_raw,
+                    categoria, subcategoria_id, clasificacion_origen, clasificacion_bloqueada,
+                    tarjeta_id, generado_desde_tarjeta, anulado
+                )
+                VALUES ('manual-mismo-netflix', 'manual', NULL, '2026-07-05', 'Suscripcion - Netflix', -100000, '-1000,00',
+                        'Electronica', ?, 'manual', 1, ?, 0, 0)
+            """, (self.subcategoria_id, tarjeta_id))
+            manual_id = conn.execute("SELECT id FROM movimientos WHERE tx_hash = 'manual-mismo-netflix'").fetchone()["id"]
+            conn.commit()
+
+        resultado = self.service.eliminar_suscripcion(suscripcion_id)
+
+        self.assertEqual(resultado["cobros_eliminados"], 1)
+        self.assertEqual(resultado["historial_montos_eliminado"], 1)
+        self.assertEqual(resultado["movimientos_eliminados"], 1)
+        with root_db.get_conn() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM movimientos WHERE id = ?", (pago["movimiento_id"],)).fetchone())
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM movimientos WHERE id = ?", (manual_id,)).fetchone())
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS total FROM tarjeta_suscripcion_cobros WHERE suscripcion_id = ?", (suscripcion_id,)).fetchone()["total"],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS total FROM tarjeta_suscripcion_historial_montos WHERE suscripcion_id = ?", (suscripcion_id,)).fetchone()["total"],
+                0,
+            )
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_eliminar_bloquea_movimientos_no_automaticos_vinculados_por_id(self):
+        tarjeta_id = self._tarjeta()
+        compra_id = self._compra(tarjeta_id, cuotas="1", monto="100,00")
+        suscripcion_id = self._suscripcion(tarjeta_id)
+        with root_db.get_conn() as conn:
+            conn.execute("""
+                INSERT INTO movimientos (
+                    tx_hash, archivo, linea, fecha, descripcion, monto_centavos, monto_raw,
+                    categoria, subcategoria_id, clasificacion_origen, clasificacion_bloqueada,
+                    tarjeta_id, compra_tarjeta_id, generado_desde_tarjeta, anulado
+                )
+                VALUES ('manual-vinculado-compra', 'manual', NULL, '2026-07-01', 'Manual compra', -10000, '-100,00',
+                        'Electronica', ?, 'manual', 1, ?, ?, 0, 0)
+            """, (self.subcategoria_id, tarjeta_id, compra_id))
+            conn.execute("""
+                INSERT INTO movimientos (
+                    tx_hash, archivo, linea, fecha, descripcion, monto_centavos, monto_raw,
+                    categoria, subcategoria_id, clasificacion_origen, clasificacion_bloqueada,
+                    tarjeta_id, suscripcion_tarjeta_id, generado_desde_tarjeta, anulado
+                )
+                VALUES ('manual-vinculado-suscripcion', 'manual', NULL, '2026-07-01', 'Manual suscripcion', -10000, '-100,00',
+                        'Electronica', ?, 'manual', 1, ?, ?, 0, 0)
+            """, (self.subcategoria_id, tarjeta_id, suscripcion_id))
+            conn.commit()
+
+        with self.assertRaisesRegex(self.service.TarjetasError, "no fueron generados automaticamente"):
+            self.service.eliminar_compra(compra_id)
+        with self.assertRaisesRegex(self.service.TarjetasError, "no fueron generados automaticamente"):
+            self.service.eliminar_suscripcion(suscripcion_id)
+
+        with root_db.get_conn() as conn:
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM compras_tarjeta WHERE id = ?", (compra_id,)).fetchone())
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM tarjeta_suscripciones WHERE id = ?", (suscripcion_id,)).fetchone())
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

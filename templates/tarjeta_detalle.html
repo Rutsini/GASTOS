@@ -1,5 +1,37 @@
 {% extends "base.html" %}
 
+{% macro delete_confirmation_dialog(dialog_id, title, item_name, action_url, tarjeta_id, has_related, related_title='', primary_count=0, primary_label='', secondary_count=0, secondary_label='', tertiary_count=0, tertiary_label='', related_message='') %}
+<dialog class="entity-dialog delete-confirmation-dialog" id="{{ dialog_id }}">
+    <div class="entity-dialog-header">
+        <div>
+            <h3>{{ title }}</h3>
+            <p class="muted">{{ item_name }}</p>
+        </div>
+        <button class="btn btn-sm" type="button" data-dialog-close>Cerrar</button>
+    </div>
+    <div class="delete-confirmation-body">
+        {% if has_related %}
+        <h4>{{ related_title }}</h4>
+        <p>Se encontraron:</p>
+        <ul class="delete-impact-list">
+            {% if primary_count > 0 %}<li>{{ primary_count }} {{ primary_label }}.</li>{% endif %}
+            {% if secondary_count > 0 %}<li>{{ secondary_count }} {{ secondary_label }}.</li>{% endif %}
+            {% if tertiary_count > 0 %}<li>{{ tertiary_count }} {{ tertiary_label }}.</li>{% endif %}
+        </ul>
+        <p>{{ related_message }}</p>
+        {% else %}
+        <p>Seguro que queres eliminar "{{ item_name }}"?</p>
+        <p>Esta accion es permanente y no se puede deshacer.</p>
+        {% endif %}
+    </div>
+    <form method="post" action="{{ action_url }}" class="delete-confirmation-actions">
+        <input type="hidden" name="tarjeta_id" value="{{ tarjeta_id }}">
+        <button class="btn" type="button" data-dialog-close>Cancelar</button>
+        <button class="btn btn-danger" type="submit" data-loading-text="Eliminando...">Eliminar definitivamente</button>
+    </form>
+</dialog>
+{% endmacro %}
+
 {% block title %}{{ tarjeta.nombre }}{% endblock %}
 {% block page_title %}{{ tarjeta.nombre }}{% endblock %}
 {% block page_subtitle %}{{ tarjeta.banco or 'Tarjeta' }}{% if tarjeta.tipo %} · {{ tarjeta.tipo }}{% endif %}{% if tarjeta.ultimos_cuatro %} · **** {{ tarjeta.ultimos_cuatro }}{% endif %}{% endblock %}
@@ -222,6 +254,7 @@
                     <button class="btn btn-sm danger" type="submit" data-confirm="Queres cancelar esta suscripcion? La suscripcion dejara de generar nuevos periodos automaticamente. Los movimientos ya registrados no seran eliminados.">Cancelar</button>
                 </form>
                 {% endif %}
+                <button class="btn btn-sm btn-danger" type="button" data-dialog-target="delete-subscription-{{ suscripcion.id }}">Eliminar</button>
             </div>
             <dialog class="subscription-dialog" id="subscription-details-{{ suscripcion.id }}">
                 <div class="subscription-dialog-header">
@@ -283,6 +316,22 @@
                 {% endif %}
                 <a class="btn btn-sm" href="#historial-tarjeta" data-dialog-close>Ver historial de pagos</a>
             </dialog>
+            {{ delete_confirmation_dialog(
+                'delete-subscription-' ~ suscripcion.id,
+                'Eliminar suscripcion',
+                suscripcion.nombre,
+                '/tarjetas/suscripciones/' ~ suscripcion.id ~ '/eliminar',
+                tarjeta.id,
+                suscripcion.tiene_relaciones_eliminacion,
+                'Esta suscripcion tiene movimientos asociados',
+                suscripcion.impacto_eliminacion.cobros_total,
+                'pagos registrados',
+                suscripcion.impacto_eliminacion.movimientos_automaticos,
+                'movimientos asociados',
+                suscripcion.impacto_eliminacion.historial_montos_total,
+                'cambios de monto registrados',
+                'La eliminacion permanente tambien eliminara los registros generados exclusivamente por esta suscripcion.'
+            ) }}
         </article>
         {% endfor %}
         <div class="empty-state" data-status-filter-empty="subscriptions" hidden>No hay suscripciones activas.</div>
@@ -364,6 +413,13 @@
                 </form>
                 {% endif %}
                 <button class="btn" type="button" data-dialog-target="purchase-details-{{ compra.id }}">Ver detalles</button>
+                {% if compra.estado == 'activa' %}
+                <form method="post" action="/tarjetas/compras/{{ compra.id }}/cancelar" class="table-action-form">
+                    <input type="hidden" name="tarjeta_id" value="{{ tarjeta.id }}">
+                    <button class="btn danger" type="submit" data-confirm="Queres cancelar esta compra? La compra dejara de impactar nuevos periodos, pero los pagos y movimientos registrados se conservaran.">Cancelar</button>
+                </form>
+                {% endif %}
+                <button class="btn btn-danger" type="button" data-dialog-target="delete-purchase-{{ compra.id }}">Eliminar</button>
             </div>
             <dialog class="entity-dialog" id="purchase-details-{{ compra.id }}">
                 <div class="entity-dialog-header">
@@ -438,6 +494,22 @@
                     </div>
                 </div>
             </dialog>
+            {{ delete_confirmation_dialog(
+                'delete-purchase-' ~ compra.id,
+                'Eliminar compra',
+                compra.descripcion,
+                '/tarjetas/compras/' ~ compra.id ~ '/eliminar',
+                tarjeta.id,
+                compra.tiene_relaciones_eliminacion,
+                'Esta compra tiene cuotas pagadas',
+                compra.impacto_eliminacion.cuotas_pagadas,
+                'cuotas pagadas',
+                compra.impacto_eliminacion.movimientos_automaticos,
+                'movimientos asociados',
+                compra.impacto_eliminacion.historial_total,
+                'registros de historial',
+                'La eliminacion permanente tambien eliminara los registros generados exclusivamente por esta compra.'
+            ) }}
         </article>
         {% endfor %}
         <div class="empty-state" data-status-filter-empty="purchases" hidden>No hay compras registradas.</div>

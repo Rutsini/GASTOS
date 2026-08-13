@@ -618,6 +618,40 @@
   gap: 12px;
 }
 
+.delete-confirmation-dialog {
+  width: min(560px, calc(100vw - 28px));
+}
+
+.delete-confirmation-body {
+  display: grid;
+  gap: 10px;
+}
+
+.delete-confirmation-body h4,
+.delete-confirmation-body p {
+  margin: 0;
+}
+
+.delete-impact-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border: 1px solid #f3b7b7;
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.delete-confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 .section-band {
   margin-top: 22px;
 }
@@ -768,7 +802,8 @@
   .purchase-actions form,
   .subscription-actions .btn,
   .subscription-actions form,
-  .subscription-actions details {
+  .subscription-actions details,
+  .delete-confirmation-actions .btn {
     width: 100%;
   }
 

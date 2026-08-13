@@ -170,6 +170,30 @@ def pagar_compra(compra_id):
     return redirect_tarjeta(tarjeta_id)
 
 
+@bp.route("/compras/<int:compra_id>/cancelar", methods=["POST"])
+def cancelar_compra(compra_id):
+    try:
+        tarjeta_id = service.cambiar_estado_compra(compra_id, "cancelada")
+        flash("Compra cancelada.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+        tarjeta_id = request.form.get("tarjeta_id")
+    return redirect_tarjeta(tarjeta_id)
+
+
+@bp.route("/compras/<int:compra_id>/eliminar", methods=["POST"])
+def eliminar_compra(compra_id):
+    try:
+        resultado = service.eliminar_compra(compra_id)
+        legacy.generar_resumenes_mensuales()
+        tarjeta_id = resultado["tarjeta_id"]
+        flash("Compra eliminada correctamente.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+        tarjeta_id = request.form.get("tarjeta_id")
+    return redirect_tarjeta(tarjeta_id)
+
+
 @bp.route("/cuotas/<int:cuota_id>/pagar", methods=["POST"])
 def pagar_cuota(cuota_id):
     tarjeta_id = request.form.get("tarjeta_id")
@@ -263,6 +287,19 @@ def cancelar_suscripcion(suscripcion_id):
     try:
         tarjeta_id = service.cambiar_estado_suscripcion(suscripcion_id, "cancelada")
         flash("Suscripcion cancelada.")
+    except service.TarjetasError as exc:
+        flash(str(exc))
+        tarjeta_id = request.form.get("tarjeta_id")
+    return redirect_tarjeta(tarjeta_id)
+
+
+@bp.route("/suscripciones/<int:suscripcion_id>/eliminar", methods=["POST"])
+def eliminar_suscripcion(suscripcion_id):
+    try:
+        resultado = service.eliminar_suscripcion(suscripcion_id)
+        legacy.generar_resumenes_mensuales()
+        tarjeta_id = resultado["tarjeta_id"]
+        flash("Suscripcion eliminada correctamente.")
     except service.TarjetasError as exc:
         flash(str(exc))
         tarjeta_id = request.form.get("tarjeta_id")
