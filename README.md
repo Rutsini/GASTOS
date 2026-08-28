@@ -1,12 +1,3 @@
-
-# Ingeniería de Software
-
-Repositorio correspondiente a la materia **Ingeniería de Software**.
-
-El objetivo del repositorio es organizar, almacenar y controlar los distintos materiales y trabajos desarrollados durante el cursado, aplicando conceptos de **Gestión de Configuración de Software (SCM)**.
-
----
-
 # Integrantes
 
 | Nombre | Legajo |
