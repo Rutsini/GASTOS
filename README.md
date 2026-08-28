@@ -1,11 +1,3 @@
-# Ingeniería de Software
-
-Repositorio correspondiente a la materia **Ingeniería de Software**.
-
-El objetivo del repositorio es organizar, almacenar y versionar los materiales y trabajos desarrollados durante el cursado.
-
----
-
 # Integrantes
 
 | Nombre | Legajo |
