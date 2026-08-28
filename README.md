@@ -1,30 +1,37 @@
-markdow
+`markdown
+# Ingeniería de Software
+
+Repositorio correspondiente a la materia **Ingeniería de Software**.
+
+El objetivo del repositorio es organizar, almacenar y controlar los distintos materiales y trabajos desarrollados durante el cursado, aplicando conceptos de **Gestión de Configuración de Software (SCM)**.
+
+---
 
 # Integrantes
 
 | Nombre | Legajo |
 | --- | --- |
-| Micaela Arrigoni | `90314` |
-| Cristian Nicolás Oviedo | `99666` |
-| Emanuel Rubiolo | `424360` |
-| Matías Bruna | `77682` |
-| Lisandro Revol | `66456` |
-| Lisandro Puentes | `403113` |
-| Carlos Tomás Ortiz | `99672` |
-| Agustín Grassis | `400448` |
-| Luis David Trifoglio | `402252` |
-| Federico Aimetta | `406818` |
-| Facundo Bazán Moreno | `401410` |
-| Ignacio Agustín Bustamante | `402465` |
-| Facundo Kolomi | `400948` |
-| Federico Alejandro Nieto Poklepovic | `79542` |
-| Máximo Andrés Russo | `403348` |
+| Arrigoni, Micaela | 90314 |
+| Oviedo, Cristian Nicolás | 99666 |
+| Rubiolo, Emanuel | 424360 |
+| Bruna, Matías | 77682 |
+| Revol, Lisandro | 66456 |
+| Puentes, Lisandro | 403113 |
+| Ortiz, Carlos Tomás | 99672 |
+| Grassis, Agustín | 400448 |
+| Trifoglio, Luis David | 402252 |
+| Aimetta, Federico | 406818 |
+| Bazán Moreno, Facundo | 401410 |
+| Bustamante, Ignacio Agustín | 402465 |
+| Kolomi, Facundo | 400948 |
+| Nieto Poklepovic, Federico Alejandro | 79542 |
+| Russo, Máximo Andrés | 403348 |
 
 ---
 
 # Estructura del repositorio
 
-text
+```text
 /
 ├── DocumentacionGeneral/
 │   ├── EstructuraRepositorio.md
@@ -44,6 +51,7 @@ text
 └── Teorico/
     ├── Bibliografia/
     │   ├── ISW/
+    │   ├── LeanKanban/
     │   ├── PA/
     │   ├── SCM/
     │   └── TS/
@@ -128,8 +136,6 @@ Ejemplo:
 MB_GestionDeConfiguracionDeSoftware.pdf
 ```
 
----
-
 ## Presentaciones de Clase
 
 Se utilizará:
@@ -145,8 +151,6 @@ PC_IntroduccionALaIngenieriaDeSoftware.pdf
 PC_SCM.pdf
 PC_TestingDeSoftware.pdf
 ```
-
----
 
 ## Trabajos Prácticos
 
