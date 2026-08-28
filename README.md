@@ -1,8 +1,4 @@
-````markdow
-
-# Integrantes
-
-# Integrantes
+markdow
 
 # Integrantes
 
@@ -28,7 +24,7 @@
 
 # Estructura del repositorio
 
-```text
+text
 /
 ├── DocumentacionGeneral/
 │   ├── EstructuraRepositorio.md
